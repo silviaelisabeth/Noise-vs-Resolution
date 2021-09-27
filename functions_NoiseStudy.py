@@ -540,6 +540,13 @@ def image_resolution(px, dist_mm, inch=None):
     return px2mm, dpi
 
 
+def px2mm_conversion(df, px2mm, surface):
+    ind_new = df.index.to_numpy() / px2mm - surface
+    col_new = df.columns.to_numpy() / px2mm
+    df.index, df.columns = ind_new, col_new
+    return df
+
+
 # =====================================================================================
 def averaging_areas(doptode_set):
     l = dict(map(lambda c: (c, pd.DataFrame([(np.mean(doptode_set[c][av]), np.std(doptode_set[c][av]))
@@ -584,7 +591,7 @@ def channel_division(dconc, dch_num, dch_denom, s):
     return dratio
 
 
-def ratiometric_intensity(path, crop_op, RoI1, RoI2):
+def ratiometric_intensity(path, crop_op, RoI1, RoI2, channel):
     # RoI are areas defined anti-clockwise starting from the top left corner with P(col / ind)
     if crop_op:
         pass
@@ -598,7 +605,8 @@ def ratiometric_intensity(path, crop_op, RoI1, RoI2):
     height = list(map(lambda n: (crop_op[n][1][1] - crop_op[n][0][1]), range(len(crop_op))))
 
     # load all calibration images - collect information
-    dict_red, dict_green, dict_conc = load_calibration_info(path=path, RoI1=crop_op, height=height, server=False)
+    dict_red, dict_green, dict_conc = load_calibration_info(path=path, RoI1=crop_op, height=height, channel=channel,
+                                                            server=False)
 
     # calculating the ratio R/G of the whole optode
     dratio = dict(map(lambda k: (k, channel_division(dconc=dict_conc, dch_num=dict_red, dch_denom=dict_green, s=k)),
@@ -650,8 +658,26 @@ def ratiometric_intensity(path, crop_op, RoI1, RoI2):
 
     # prepare for output
     dfoptode = [dfop1, dfop2]
-    para = dict({'sample size': (npx1, npx2), 'concentration': conc})
+    para = dict({'sample size': (npx1, npx2), 'concentration': conc, 'ch1': dict_red, 'ch2': dict_green})
     return dfoptode, para
+
+
+def reduce_dict(name, dint1, dint2=None, nopt=1, option='ratio'):
+    if option == 'ratio':
+        dop1 = dict(map(lambda s: (s, np.divide(dint1[s][name][0], dint2[s][name][0])), dint1.keys()))
+        if nopt > 1:
+            dop2 = dict(map(lambda s: (s, np.divide(dint1[s][name][1], dint2[s][name][1])), dint1.keys()))
+        else:
+            dop2 = None
+    else:
+        dop1 = dict(map(lambda s: (s, dint1[s][name][0]), dint1.keys()))
+        if nopt > 1:
+            dop2 = dict(map(lambda s: (s, dint1[s][name][1]), dint1.keys()))
+        else:
+            dop2 = None
+
+    dint = dict({'optode1': dop1, 'optode2': dop2})
+    return dint
 
 
 def splitImage(path, RoI_op):
@@ -661,27 +687,11 @@ def splitImage(path, RoI_op):
 
     # split into smaller dictionaries
     name = list(dict_red['set1'].keys())[0]
-    dict_ratio_run1_op1 = dict(map(lambda s: (s, np.divide(dict_red[s][name][0], dict_green[s][name][0])),
-                                   dict_red.keys()))
+    dint_red = reduce_dict(name=name, dint1=dict_red, dint2=None, nopt=len(RoI_op), option='single')
+    dint_green = reduce_dict(name=name, dint1=dict_green, dint2=None, nopt=len(RoI_op), option='single')
+    dint_ratio = reduce_dict(name=name, dint1=dict_red, dint2=dict_green, nopt=len(RoI_op), option='ratio')
 
-    if len(RoI_op) > 1:
-        dict_ratio_run1_op2 = dict(map(lambda s: (s, np.divide(dict_red[s][name][1], dict_green[s][name][1])),
-                                       dict_red.keys()))
-    else:
-        dict_ratio_run1_op2 = None
-
-    dict_ratio_run1 = dict({'optode1': dict_ratio_run1_op1, 'optode2': dict_ratio_run1_op2})
-
-    dict_ratio_run2_op1 = dict(map(lambda s: (s, np.divide(dict_red[s]['new-1'][0], dict_green[s]['new-1'][0])),
-                                   dict_red.keys()))
-    if len(RoI_op) > 1:
-        dict_ratio_run2_op2 = dict(map(lambda s: (s, np.divide(dict_red[s]['new-1'][1], dict_green[s]['new-1'][1])),
-                                   dict_red.keys()))
-    else:
-        dict_ratio_run2_op2 = None
-    dict_ratio_run2 = dict({'optode1': dict_ratio_run2_op1, 'optode2': dict_ratio_run2_op2})
-
-    return dict_ratio_run1, dict_ratio_run2
+    return dint_red, dint_green, dint_ratio
 
 
 def split2statics(dO2):
@@ -962,7 +972,7 @@ def O2_analysis_v2(f, k, iratio):
     return x
 
 
-def O2_analysis_area(iratio, f, k, I0):
+def O2_analysis_area(para, iratio, iratio_std=None, int_type='norm'):
     """
     :param f:   mcerp.UncertainVariable contaning a normal distributed sample of values around the best value of the
                 fit parameter f and its covariance value as sigma
@@ -972,18 +982,24 @@ def O2_analysis_area(iratio, f, k, I0):
                 (mu is the average value and sigma is the proagated error) or only mean values as np.float64
     return x:
     """
-    # create ufloat for uncertainty propagation
-    i0_mp = ufloat(I0[0], I0[1])
-    f_mp = ufloat(f[0], f[1])
-    k_mp = ufloat(k[0], k[1])
-    if isinstance(iratio, (np.ndarray, np.generic)):
-        iratio_arr = unumpy.uarray(iratio, np.array(np.zeros(shape=(iratio.shape))))
-    else:
-        iratio_arr = unumpy.uarray(iratio.values, np.array(np.zeros(shape=(iratio.shape))))
+    # create ufloat for uncertainty propagation via parameter
+    f_mp = ufloat(para.loc['f'][0], para.loc['f'][1])
+    k_mp = ufloat(para.loc['k'][0], para.loc['k'][1])
 
-    # x = 1/k * (np.divide(f, np.divide(1, inorm) + f - 1) - 1)
-    a = iratio_arr / i0_mp + f_mp - 1
+    if int_type == 'norm':
+        int_arr = unumpy.uarray(np.array(iratio.to_numpy()), np.array(iratio_std.to_numpy()))
+    else:
+        i0_mp = ufloat(para.loc['I0'][0], para.loc['I0'][1])
+        if isinstance(iratio, (np.ndarray, np.generic)):
+            iratio_arr = unumpy.uarray(iratio, np.array(np.zeros(shape=(iratio.shape))))
+        else:
+            iratio_arr = unumpy.uarray(iratio.values, np.array(np.zeros(shape=(iratio.shape))))
+        int_arr = iratio_arr / i0_mp
+
+    # intermediate value calculation for x = 1/k * (np.divide(f, np.divide(1, inorm) + f - 1) - 1)
+    a = int_arr + f_mp - 1
     b = f_mp / a - 1
+    # final O2 concentration
     x = 1 / k_mp * b
 
     df_x = pd.DataFrame(x, index=pd.DataFrame(iratio).index, columns=pd.DataFrame(iratio).columns)
@@ -1036,10 +1052,10 @@ def penetration_depth(dO2_lp, ls_kernel, df_ms, treshold):
         depth.columns = [i + '-' + j for i in dO2_lp[kshape].keys() for j in ['mean', 'SD']]
         dprofile[kshape] = depth
 
-    # exponential decay for interpolation of microsensor data close to the transition
+    # exponential decay for interpolation of micro-sensor data close to the transition
     data_ms = interpolation_microsensor(df_ms=df_ms, profile_ex=dprofile[ls_kernel[0]])
 
-    # geometric intersection of line profile and O2 treshold for penetration depth
+    # geometric intersection of line profile and O2 threshold for penetration depth
     dd = dict(map(lambda k: (k, pd.concat([dprofile[k].filter(like='mean'), data_ms], axis=1)), ls_kernel))
 
     ydepth = pd.concat([pd.DataFrame([geometric_intersection(treshold=treshold, dd=dd[k], column=d)[0][0]
@@ -1330,7 +1346,7 @@ def load_calibResults(path_calib):
     return dic_header, dinitial, dnorm, para
 
 
-def load_calibration_info(path, RoI1, height, server=True):
+def load_calibration_info(path, RoI1, height, server=True, channel=('R', 'G')):
     # red channel of calibration point as array
     dcal_R1 = dict()
     dcal_R2 = dict()
@@ -1344,15 +1360,15 @@ def load_calibration_info(path, RoI1, height, server=True):
     dcal_conc2 = list()
     dcal_conc3 = list()
 
-    for f in glob(path + '*_R*.tif'):
+    for f in glob(path + '*_{}*.tif'.format(channel[0])):
         if server is True:
             fname_R = f.split('calibration/')[1].split('.')[0]
         else:
-            fname_R = f.split('calibration')[1].split('.')[0]
+            fname_R = f.split('calibration')[1].split('.')[0] # calibration
 
         if 'Cal' in fname_R:
             # green channel
-            fname_G = f.split('R')[0] + 'G.tif'
+            fname_G = f.split(channel[0])[0] + '{}.tif'.format(channel[1])
 
             # setting 1
             if 'setting1' in fname_R:
@@ -1444,7 +1460,7 @@ def load_calibration_info(path, RoI1, height, server=True):
     return dict_red, dict_green, dict_conc
 
 
-def load_files(path, RoI1, height):
+def load_calibration_info_v1(path, RoI1, height, server=True, channel=('B', 'G2')):
     # red channel of calibration point as array
     dcal_R1 = dict()
     dcal_R2 = dict()
@@ -1453,11 +1469,126 @@ def load_files(path, RoI1, height):
     dcal_G1 = dict()
     dcal_G2 = dict()
     dcal_G3 = dict()
-    for f in glob(path + '*_R*.tif'):
+    # concentration of calibration point (integer)
+    dcal_conc1 = list()
+    dcal_conc2 = list()
+    dcal_conc3 = list()
+
+    for f in glob(path + '*_{}*.tif'.format(channel[0])):
+        if server is True:
+            fname_R = f.split('calibration/')[1].split('.')[0]
+        else:
+            fname_R = 'Cal' + f.split('Cal')[1].split('.')[0] # calibration
+
+        if 'Cal' in fname_R:
+            # green channel
+            fname_G = f.split(channel[0])[0] + '{}.tif'.format(channel[1])
+
+            # setting 1
+            if 'setting1' in fname_R:
+                conc = fname_R.split('_')[1]
+
+                dcal_conc1.append(np.int(conc.split('%')[0]))
+                # -----------------------------------
+                # store red channel as array
+                pic_R = Image.open(f)
+                imR_ = np.array(pic_R)
+                # load optode into dictionary
+                imarrayR = list(map(lambda r: imR_[RoI1[r][0][1]:RoI1[r][1][1] + 1], range(len(RoI1))))
+                imR = list(map(lambda r: np.stack([imarrayR[r][n][RoI1[r][0][0]:RoI1[r][2][0] + 1]
+                                                   for n in np.arange(height[r] + 1)], axis=0), range(len(RoI1))))
+
+                # combining red-channel images
+                dcal_R1[conc] = imR
+                # -----------------------------------
+                # store green (G1) channel as array
+                pic_G = Image.open(fname_G)
+                imG_ = np.array(pic_G)
+                # load optode into dictionary
+                imarrayG = list(map(lambda r: imG_[RoI1[r][0][1]:RoI1[r][1][1] + 1], range(len(RoI1))))
+                imG = list(map(lambda r: np.stack([imarrayG[r][n][RoI1[r][0][0]:RoI1[r][2][0] + 1]
+                                                   for n in np.arange(height[r] + 1)], axis=0), range(len(RoI1))))
+
+                # combining red-channel images
+                dcal_G1[conc] = imG
+
+            # setting 2
+            if 'setting2' in fname_R:
+                conc = fname_R.split('_')[1]
+                dcal_conc2.append(np.int(conc.split('%')[0]))
+                # -----------------------------------
+                # store red channel as array
+                pic_R = Image.open(f)
+                imR_ = np.array(pic_R)
+                # load optode into dictionary
+                imarrayR = list(map(lambda r: imR_[RoI1[r][0][1]:RoI1[r][1][1] + 1], range(len(RoI1))))
+                imR = list(map(lambda r: np.stack([imarrayR[r][n][RoI1[r][0][0]:RoI1[r][2][0] + 1]
+                                                   for n in np.arange(height[r] + 1)], axis=0), range(len(RoI1))))
+
+                # combining red-channel images
+                dcal_R2[conc] = imR
+                # -----------------------------------
+                # store green (G1) channel as array
+                pic_G = Image.open(fname_G)
+                imG_ = np.array(pic_G)
+                # load optode into dictionary
+                imarrayG = list(map(lambda r: imG_[RoI1[r][0][1]:RoI1[r][1][1] + 1], range(len(RoI1))))
+                imG = list(map(lambda r: np.stack([imarrayG[r][n][RoI1[r][0][0]:RoI1[r][2][0] + 1]
+                                                   for n in np.arange(height[r] + 1)], axis=0), range(len(RoI1))))
+
+                # combining red-channel images
+                dcal_G2[conc] = imG
+
+            # setting 3
+            if 'setting3' in fname_R:
+                conc = fname_R.split('_')[1]
+                dcal_conc3.append(np.int(conc.split('%')[0]))
+                # -----------------------------------
+                # store red channel as array
+                pic_R = Image.open(f)
+                imR_ = np.array(pic_R)
+                # load optode into dictionary
+                imarrayR = list(map(lambda r: imR_[RoI1[r][0][1]:RoI1[r][1][1] + 1], range(len(RoI1))))
+                imR = list(map(lambda r: np.stack([imarrayR[r][n][RoI1[r][0][0]:RoI1[r][2][0] + 1]
+                                                   for n in np.arange(height[r] + 1)], axis=0), range(len(RoI1))))
+
+                # combining red-channel images
+                dcal_R3[conc] = imR
+                # -----------------------------------
+                # store green (G1) channel as array
+                pic_G = Image.open(fname_G)
+                imG_ = np.array(pic_G)
+                # load optode into dictionary
+                imarrayG = list(map(lambda r: imG_[RoI1[r][0][1]:RoI1[r][1][1] + 1], range(len(RoI1))))
+                imG = list(map(lambda r: np.stack([imarrayG[r][n][RoI1[r][0][0]:RoI1[r][2][0] + 1]
+                                                   for n in np.arange(height[r] + 1)], axis=0), range(len(RoI1))))
+
+                # combining red-channel images
+                dcal_G3[conc] = imG
+
+    # combine settings
+    dict_red = dict({'set1': dcal_R1, 'set2': dcal_R2, 'set3': dcal_R3})
+    dict_green = dict({'set1': dcal_G1, 'set2': dcal_G2, 'set3': dcal_G3})
+    dict_conc = dict({'set1': dcal_conc1, 'set2': dcal_conc2, 'set3': dcal_conc3})
+
+    return dict_red, dict_green, dict_conc
+
+
+def load_files(path, RoI1, height, channel=('R', 'G')):
+    # red channel of calibration point as array
+    dcal_R1 = dict()
+    dcal_R2 = dict()
+    dcal_R3 = dict()
+    # green channel (G1) of calibration point as array
+    dcal_G1 = dict()
+    dcal_G2 = dict()
+    dcal_G3 = dict()
+    for f in glob(path + '*_{}*.tif'.format(channel[0])):
         fname_R = f.split('/')[-1].split('.')[0]
+
         if 'gradient' in fname_R:
             # green channel
-            fname_G = f.split('R')[0] + 'G.tif'
+            fname_G = f.split(channel[0])[0] + '{}.tif'.format(channel[1])
 
             # setting 1
             if 'settings1' in fname_R:
@@ -1606,91 +1737,165 @@ def read_microsensor(file_ms, encoding='latin-1'):
 
 
 # ====================================================================================================
-def imageblur(kernel, kshape, dict_ratio, direction='horizontal'):
+def imageblur(kernel, kshape, dic_int, direction='horizontal'):
     if kernel == 'blur':
         if direction == 'horizontal':
-            dst = cv2.blur(dict_ratio, kshape)
+            dst = cv2.blur(dic_int, kshape)
         elif direction == 'vertical':
-            dst = cv2.blur(dict_ratio.T, kshape).T
+            dst = cv2.blur(dic_int.T, kshape).T
         else:
             raise ValueError('define direction of kernel as either horizontal or vertical')
-
     elif kernel == 'filter':
         kernel = np.ones(kshape, np.float32) / (kshape[0] * kshape[1])
         if direction == 'horizontal':
-            dst = cv2.filter2D(dict_ratio, -1, kernel)
+            dst = cv2.filter2D(dic_int, -1, kernel)
         elif direction == 'vertical':
-            dst = cv2.filter2D(dict_ratio.T, -1, kernel).T
+            dst = cv2.filter2D(dic_int.T, -1, kernel).T
         else:
             raise ValueError('define direction of kernel as either horizontal or vertical')
     elif kernel == 'gauss':
         # sigmaX and sigmaY are set as 0 --> calculation from kernel
         if direction == 'horizontal':
-            dst = cv2.GaussianBlur(dict_ratio, kshape, 0)
+            dst = cv2.GaussianBlur(dic_int, kshape, 0)
         elif direction == 'vertical':
-            dst = cv2.GaussianBlur(dict_ratio.T, kshape, 0).T
+            dst = cv2.GaussianBlur(dic_int.T, kshape, 0).T
         else:
             raise ValueError('define direction of kernel as either horizontal or vertical')
     return dst
 
 
-def blurimage(o, s, kernel, kshape, dratio, px2mm, surface):
+def blurimage(o, s, kernel, kshape, dint, px2mm=None, surface=None, conversion=True):
     # Depth profile with (horizontal, vertical, and square) Gaussian blur for one example
     # vertical blur
-    dst_v = imageblur(kernel=kernel, kshape=(1, kshape[0]), dict_ratio=dratio[o][s], direction='horizontal')
+    dst_v = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=dint[o][s], direction='horizontal')
     # horizontal blur
-    dst_h = imageblur(kernel=kernel, kshape=(kshape[0], 1), dict_ratio=dratio[o][s], direction='horizontal')
+    dst_h = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=dint[o][s], direction='horizontal')
     # square blur
-    dst = imageblur(kernel=kernel, kshape=kshape, dict_ratio=dratio[o][s], direction='horizontal')
-
-    # .........................................................
-    # convert from px to mm
-    # vertical
-    df_v = pd.DataFrame(dst_v)
-    ind_new = df_v.index.to_numpy() / px2mm - surface[int(o[-1])-1]
-    col_new = df_v.columns.to_numpy() / px2mm
-    df_v.index = ind_new
-    df_v.columns = col_new
-    # horizontal
-    df_h = pd.DataFrame(dst_h)
-    ind_new = df_h.index.to_numpy() / px2mm - surface[int(o[-1])-1]
-    col_new = df_h.columns.to_numpy() / px2mm
-    df_h.index = ind_new
-    df_h.columns = col_new
-    # square
-    df = pd.DataFrame(dst)
-    ind_new = df.index.to_numpy() / px2mm - surface[int(o[-1])-1]
-    col_new = df.columns.to_numpy() / px2mm
-    df.index = ind_new
-    df.columns = col_new
+    dst = imageblur(kernel=kernel, kshape=kshape, dic_int=dint[o][s], direction='horizontal')
 
     # combine all options in one dictionary
-    dimages = dict({'vertical': df_v, 'horizontal': df_h, 'square': df})
+    dimages = dict({'vertical': dst_v, 'horizontal': dst_h, 'square': dst})
 
+    # convert from px to mm
+    if conversion is True:
+        if px2mm is None or surface is None:
+            raise ValueError('all parameter for conversion of px to mm are requires. Provide px2mm, surface parameter.')
+        dimages = dict(map(lambda d: (d, px2mm_conversion(df=pd.DataFrame(dimages[d]), px2mm=px2mm,
+                                                          surface=surface[int(o[-1])-1])), dimages.keys()))
     return dimages
+# def blurimage(o, s, kernel, kshape, dint, px2mm, surface):
+#     # Depth profile with (horizontal, vertical, and square) Gaussian blur for one example
+#     # vertical blur
+#     dst_v = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=dint[o][s], direction='horizontal')
+#     # horizontal blur
+#     dst_h = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=dint[o][s], direction='horizontal')
+#     # square blur
+#     dst = imageblur(kernel=kernel, kshape=kshape, dic_int=dint[o][s], direction='horizontal')
+#
+#     # .........................................................
+#     # convert from px to mm
+#     # vertical
+#     df_v = px2mm_conversion(df=pd.DataFrame(dst_v), px2mm=px2mm, surface=surface[int(o[-1])-1])
+#
+#     # horizontal
+#     df_h = px2mm_conversion(df=pd.DataFrame(dst_h), px2mm=px2mm, surface=surface[int(o[-1]) - 1])
+#
+#     # square
+#     df = px2mm_conversion(df=pd.DataFrame(dst), px2mm=px2mm, surface=surface[int(o[-1]) - 1])
+#
+#     # combine all options in one dictionary
+#     dimages = dict({'vertical': df_v, 'horizontal': df_h, 'square': df})
+#
+#     return dimages
 
 
-def O2blur_optode(inp, path_calib, kernel, kshape, dratio, px2mm, surface, depth_min, depth_max):
+def blur_normIntensity(dint, I0, kshape, kernel='gauss', px2mm=None, surface=None, o=None, conversion=True):
+    # determine normalized intensity including uncertainty
+    i0_mp = ufloat(I0[0], I0[1])
+    iratio_arr = unumpy.uarray(dint, np.array(np.zeros(shape=(dint.shape))))
+    inorm_uncer = iratio_arr / i0_mp
+    # split in mean and std
+    image_av = [[i.n for i in inorm_uncer[en]] for en in range(len(inorm_uncer))]
+    image_std = [[i.s for i in inorm_uncer[en]] for en in range(len(inorm_uncer))]
+
+    # ......................................................................................
+    # blur image
+    # vertical blur - mean & std
+    imgv_arr = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=np.array(image_av), direction='horizontal')
+    df_v = pd.DataFrame(imgv_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+    imgvSTD_arr = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=np.array(image_std), direction='horizontal')
+    df_v_std = pd.DataFrame(imgvSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+
+    # horizontal blur - mean & std
+    imgh_arr = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=np.array(image_av), direction='horizontal')
+    df_h = pd.DataFrame(imgh_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+    imghSTD_arr = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=np.array(image_std), direction='horizontal')
+    df_h_std = pd.DataFrame(imghSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+
+    # squared blur - mean & std
+    img_arr = imageblur(kernel=kernel, kshape=kshape, dic_int=np.array(image_av), direction='horizontal')
+    df_ = pd.DataFrame(img_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+    imgSTD_arr = imageblur(kernel=kernel, kshape=kshape, dic_int=np.array(image_std), direction='horizontal')
+    df_std = pd.DataFrame(imgSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+
+    # combine all options in one dictionary
+    dimages = dict({'vertical': df_v, 'horizontal': df_h, 'square': df_})
+    dimagesSTD = dict({'vertical': df_v_std, 'horizontal': df_h_std, 'square': df_std})
+
+    # ......................................................................................
+    # convert from px to mm
+    if conversion is True:
+        if px2mm is None or surface is None or o is None:
+            raise ValueError('all parameter for conversion of px into mm are required. Provide px2mm, surface parameter.')
+        dimages = dict(map(lambda d: (d, px2mm_conversion(df=pd.DataFrame(dimages[d]), surface=surface[int(o[-1]) - 1],
+                                                          px2mm=px2mm)), dimages.keys()))
+        dimagesSTD = dict(map(lambda d: (d, px2mm_conversion(df=pd.DataFrame(dimagesSTD[d]), px2mm=px2mm,
+                                                             surface=surface[int(o[-1]) - 1])), dimages.keys()))
+    return dimages, dimagesSTD
+
+
+def O2blur_optode(inp, path_calib, kernel, kshape, px2mm, surface, depth_min, depth_max, dint_ch1, dint_ch2=None,
+                  int_type='ratio'):
     # preparation
     o = inp.split(',')[0]
     s = inp.split(',')[1].strip()
 
-    # blur images
-    dimages = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dratio=dratio, px2mm=px2mm, surface=surface)
-
-    # crop to image frame of interest
-    dimg = dict(map(lambda d: (d, dimages[d].loc[depth_min:depth_max, :]), dimages.keys()))
-
-    # -------------------------------------------
     # load calibration
     calib_info = load_calibration_para_v1(path_calib=path_calib)
     para = calib_info[o][s]
 
+    # -------------------------------------------
+    # blur images
+    if int_type == 'norm':
+        dimages, dimagesSTD = blur_normIntensity(dint=dint_ch1[o][s], I0=para.loc['I0'].to_numpy(), kernel='gauss',
+                                                 kshape=kshape, px2mm=px2mm, surface=surface, o=o, conversion=True)
+    else:
+        dblur_ch1 = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dint=dint_ch1, px2mm=px2mm, surface=surface)
+        if int_type == 'ratio':
+            dimages = dblur_ch1
+        elif int_type == 'single':
+            # blur individual color channels, then determine ratiometric intensity
+            dgreen_blur = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dint=dint_ch2, px2mm=px2mm, surface=surface)
+            dimages = dict(map(lambda ax: (ax, dblur_ch1[ax] / dgreen_blur[ax]), dblur_ch1.keys()))
+        else:
+            raise ValueError('select a valid argument for int_type. Chose either norm, ratio, or single:'
+                             'norm ... blur normalized intensity'
+                             'ratio ... blur ratiometric intensity'
+                             'single ... blur individual color channels')
+
+    # crop to image frame of interest
+    dimg = dict(map(lambda d: (d, dimages[d].loc[depth_min:depth_max, :]), dimages.keys()))
+    if int_type == 'norm':
+        dimg_std = dict(map(lambda d: (d, dimagesSTD[d].loc[depth_min:depth_max, :]), dimagesSTD.keys()))
+    else:
+        dimg_std = dict(map(lambda d: (d, None), dimages.keys()))
+
+    # -------------------------------------------
     # determine O2 concentration
     dO2_calc_ = dict()
     for h in dimages.keys():
-        dO2_calc = O2_analysis_area(f=para.loc['f'].to_numpy(), k=para.loc['k'].to_numpy(), iratio=dimg[h],
-                                    I0=para.loc['I0'].to_numpy())
+        print(dimg[h])
+        dO2_calc = O2_analysis_area(para=para, iratio=dimg[h], iratio_std=dimg_std[h], int_type=int_type)
         dO2_calc_[h] = dO2_calc
 
     # split in mean and SD
@@ -1746,15 +1951,24 @@ def postprocessing(px2mm, baseline, O2_calc, min_=-50, max_=150):
 
 
 # ----------------------------------------------------------
-def O2concentration_lp(para, ddlp, ls_lw):
+def O2concentration_lp(para, ls_lw, ddlp, ddlp_std=None, int_type='norm'):
     # determine O2 concentration
-    dO2 = dict(map(lambda d: (d, dict(map(lambda lw_: (lw_, pd.concat([O2_analysis_area(f=para.loc['f'].to_numpy(),
-                                                                                        k=para.loc['k'].to_numpy(),
-                                                                                        iratio=ddlp[d][lw_][c],
-                                                                                        I0=para.loc['I0'].to_numpy())
-                                                                       for c in ddlp[d][lw_].columns],
-                                                                      axis=1).fillna(limit=5, method='ffill')),
-                                          ddlp[d].keys()))), ddlp.keys()))
+    if ddlp_std is None:
+        dO2 = dict(map(lambda d:
+                       (d, dict(map(lambda lw_: (lw_, pd.concat([O2_analysis_area(para=para, int_type=int_type,
+                                                                                  iratio=ddlp[d][lw_][c],
+                                                                                  iratio_std=None)
+                                                                 for c in ddlp[d][lw_].columns],
+                                                                axis=1).fillna(limit=5, method='ffill')),
+                                    ddlp[d].keys()))), ddlp.keys()))
+    else:
+        dO2 = dict(map(lambda d:
+                       (d, dict(map(lambda lw_: (lw_, pd.concat([O2_analysis_area(para=para, int_type=int_type,
+                                                                                  iratio=ddlp[d][lw_][c],
+                                                                                  iratio_std=ddlp_std[d][lw_][c])
+                                                                 for c in ddlp[d][lw_].columns],
+                                                                axis=1).fillna(limit=5, method='ffill')),
+                                    ddlp[d].keys()))), ddlp.keys()))
 
     # averaging for mean and SD
     dO2_depth = dict()
@@ -1763,7 +1977,7 @@ def O2concentration_lp(para, ddlp, ls_lw):
         for lw_ in ls_lw:
             d_av, d_sd = dict(), dict()
             for c in dO2[d][lw_].columns:
-                d_av_ = pd.DataFrame([i.n for i in dO2[d][lw_][c].to_numpy()],index=dO2[d][lw_].index, columns=['mean'])
+                d_av_ = pd.DataFrame([i.n for i in dO2[d][lw_][c].to_numpy()], index=dO2[d][lw_].index, columns=['mean'])
                 d_sd_ = pd.DataFrame([i.s for i in dO2[d][lw_][c].to_numpy()], index=dO2[d][lw_].index, columns=['SD'])
                 d_av[c], d_sd[c] = d_av_, d_sd_
 
@@ -1776,24 +1990,75 @@ def O2concentration_lp(para, ddlp, ls_lw):
     return dO2_depth
 
 
-def O2_lineprofile_compare_v1(inp, surface, kernel, kshape, dratio, px2mm, lp, ls_lw, path_calib):
+def O2_lineprofile_compare_v1(inp, surface, kernel, kshape, px2mm, lp, ls_lw, path_calib, dint_ch1, dint_ch2=None,
+                              blur_type='ratio'):
     # preparation
     o = inp.split(',')[0]
     s = inp.split(',')[1].strip()
-
-    # blur images
-    dimages = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dratio=dratio, px2mm=px2mm, surface=surface)
-
-    # crop to image width of interest
-    ddlp = dict(map(lambda d: (d, dict(map(lambda lw_: (lw_, line_profile_v1(df=dimages[d], lw=lw_, lp=lp[0])),
-                                           ls_lw))), dimages.keys()))
 
     # load calibration
     calib_info = load_calibration_para_v1(path_calib=path_calib)
     para = calib_info[o][s]
 
+    # blur images
+    dblur_ch1 = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dint=dint_ch1, px2mm=px2mm, surface=surface)
+    if blur_type == 'ratio':
+        dimages = dblur_ch1
+    else:
+        # blur individual color channels, then determine ratiometric intensity
+        dgreen_blur = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dint=dint_ch2, px2mm=px2mm, surface=surface)
+        dimages = dict(map(lambda ax: (ax, dblur_ch1[ax] / dgreen_blur[ax]), dblur_ch1.keys()))
+
+    # crop to image width of interest
+    ddlp = dict(map(lambda d: (d, dict(map(lambda lw_: (lw_, line_profile_v1(df=dimages[d], lw=lw_, lp=lp[0])),
+                                           ls_lw))), dimages.keys()))
+
     # determine O2 concentration for line profile
     dO2_lp = O2concentration_lp(para=para, ddlp=ddlp, ls_lw=ls_lw)
 
+    return dO2_lp
+
+
+def O2_lineprofile_compare_v2(inp, surface, kernel, kshape, px2mm, lp, ls_lw, path_calib, dint_ch1, dint_ch2=None,
+                              int_type='norm'):
+    # preparation
+    o = inp.split(',')[0]
+    s = inp.split(',')[1].strip()
+
+    # load calibration
+    calib_info = load_calibration_para_v1(path_calib=path_calib)
+    para = calib_info[o][s]
+
+    # blur images
+    if int_type == 'norm':
+        dimages, dimagesSTD = blur_normIntensity(dint=dint_ch1[o][s], I0=para.loc['I0'].to_numpy(), kernel='gauss',
+                                                 kshape=kshape, px2mm=px2mm, surface=surface, o=o, conversion=True)
+    else:
+        dblur_ch1 = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dint=dint_ch1, px2mm=px2mm, surface=surface)
+        if int_type == 'ratio':
+            dimages = dblur_ch1
+        elif int_type == 'single':
+            # blur individual color channels, then determine ratiometric intensity
+            dgreen_blur = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dint=dint_ch2, px2mm=px2mm, surface=surface)
+            dimages = dict(map(lambda ax: (ax, dblur_ch1[ax] / dgreen_blur[ax]), dblur_ch1.keys()))
+        else:
+            raise ValueError('select a valid argument for int_type. Chose either norm, ratio, or single:'
+                             'norm ... blur normalized intensity'
+                             'ratio ... blur ratiometric intensity'
+                             'single ... blur individual color channels')
+
+    # crop to image width of interest
+    ddlp = dict(map(lambda d: (d, dict(map(lambda lw_: (lw_, line_profile_v1(df=dimages[d], lw=lw_, lp=lp[0])),
+                                           ls_lw))), dimages.keys()))
+
+    if int_type == 'norm':
+        ddlp_std = dict(map(lambda d:
+                            (d, dict(map(lambda lw_: (lw_, line_profile_v1(df=dimagesSTD[d], lw=lw_, lp=lp[0])),
+                                         ls_lw))), dimages.keys()))
+    else:
+        ddlp_std = None
+
+    # determine O2 concentration for line profile
+    dO2_lp = O2concentration_lp(para=para, ls_lw=ls_lw, ddlp=ddlp, ddlp_std=ddlp_std, int_type=int_type)
     return dO2_lp
 
