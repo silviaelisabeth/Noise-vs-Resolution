@@ -18,6 +18,7 @@ import matplotlib.patches as patches
 from mpl_toolkits.mplot3d import Axes3D
 from shapely.geometry import LineString
 import cv2
+import math
 import multiprocessing as mp
 import seaborn as sns
 import pandas as pd
@@ -25,6 +26,7 @@ import numpy as np
 import random
 from lmfit import Model
 from scipy.interpolate import interp1d
+from scipy.signal import savgol_filter
 from mcerp import *
 from uncertainties import *
 from uncertainties import unumpy
@@ -404,11 +406,13 @@ def plotLP(dO2_lp, df_ms, header_ms, depth, kshape, depth_lp, s, arg, dO2_optode
         with plt.style.context('classic'):
             ax11 = fig_lp.add_axes([0.13, 0.2, 0.2, 0.2])
             ax21 = fig_lp.add_axes([0.44, 0.2, 0.2, 0.2])
-            ax31 = fig_lp.add_axes([0.75, 0.2, 0.2, 0.2])
+            if len(dO2_lp[kshape]['square'].keys()) != 0:
+                ax31 = fig_lp.add_axes([0.75, 0.2, 0.2, 0.2])
 
     ax1.set_title('(A) Horizontal blur', fontsize=fs, loc='left')
     ax2.set_title('(B) Vertical blur', fontsize=fs, loc='left')
-    ax3.set_title('(C) Square blur', fontsize=fs, loc='left')
+    if len(dO2_lp[kshape]['square'].keys()) != 0:
+        ax3.set_title('(C) Square blur', fontsize=fs, loc='left')
 
     # ..........................................
     # plot line profile
@@ -423,10 +427,13 @@ def plotLP(dO2_lp, df_ms, header_ms, depth, kshape, depth_lp, s, arg, dO2_optode
     ax2.fill_betweenx(df_v.index, df_v['mean'].values - df_v['SD'].values, df_v['mean'].values + df_v['SD'].values,
                       facecolor=col[col_], alpha=0.25)
     # squared
-    df_s = dO2_lp[kshape]['square'][arg['lw']].fillna(limit=5, method='ffill').loc[depth_lp[0]: depth_lp[1]]
-    ax3.plot(df_s['mean'].values, df_s.index, lw=arg['curve lw'], color=col[col_])
-    ax3.fill_betweenx(df_s.index, df_s['mean'].values - df_s['SD'].values, df_s['mean'].values + df_s['SD'].values,
-                      facecolor=col[col_], alpha=0.25)
+    if len(dO2_lp[kshape]['square'].keys()) == 0:
+        ax3.axis('off')
+    else:
+        df_s = dO2_lp[kshape]['square'][arg['lw']].fillna(limit=5, method='ffill').loc[depth_lp[0]: depth_lp[1]]
+        ax3.plot(df_s['mean'].values, df_s.index, lw=arg['curve lw'], color=col[col_])
+        ax3.fill_betweenx(df_s.index, df_s['mean'].values - df_s['SD'].values, df_s['mean'].values + df_s['SD'].values,
+                          facecolor=col[col_], alpha=0.25)
 
     # ..........................................
     # 2D imshow
@@ -438,19 +445,22 @@ def plotLP(dO2_lp, df_ms, header_ms, depth, kshape, depth_lp, s, arg, dO2_optode
                           vmax=arg['vmax op'])
         op2 = ax21.imshow(dO2_optode[kshape]['vertical'], extent=extent, aspect=arg['aspect'], cmap=arg['cmap'],
                           vmin=arg['vmin op'], vmax=arg['vmax op'])
-        op3 = ax31.imshow(dO2_optode[kshape]['square'], extent=extent, aspect=arg['aspect'], cmap=arg['cmap'],
-                          vmin=arg['vmin op'], vmax=arg['vmax op'])
+        if len(dO2_lp[kshape]['square'].keys()) != 0:
+            op3 = ax31.imshow(dO2_optode[kshape]['square'], extent=extent, aspect=arg['aspect'], cmap=arg['cmap'],
+                              vmin=arg['vmin op'], vmax=arg['vmax op'])
 
         # colorbar
         fig_lp.colorbar(op1, aspect=10, shrink=0.8, ax=ax11)
         fig_lp.colorbar(op2, aspect=10, shrink=0.8, ax=ax21)
-        fig_lp.colorbar(op3, aspect=10, shrink=0.8, ax=ax31)
+        if len(dO2_lp[kshape]['square'].keys()) != 0:
+            fig_lp.colorbar(op3, aspect=10, shrink=0.8, ax=ax31)
 
     # ..........................................
     # microsensor
     ax1.plot(df_ms[header_ms[1]].to_numpy(), depth, lw=arg['curve lw'], color='black', label='microsensor')
     ax2.plot(df_ms[header_ms[1]].to_numpy(), depth, lw=arg['curve lw'], color='black', label='microsensor')
-    ax3.plot(df_ms[header_ms[1]].to_numpy(), depth, lw=arg['curve lw'], color='black', label='microsensor')
+    if len(dO2_lp[kshape]['square'].keys()) != 0:
+        ax3.plot(df_ms[header_ms[1]].to_numpy(), depth, lw=arg['curve lw'], color='black', label='microsensor')
 
     # ..........................................
     # adjust axes
@@ -458,18 +468,21 @@ def plotLP(dO2_lp, df_ms, header_ms, depth, kshape, depth_lp, s, arg, dO2_optode
     ax1.set_ylim(df_h.index[-1] * 1.05, df_h.index[0] * 1.05)
     ax1.tick_params(labelsize=arg['fontsize']*0.9)
     ax2.tick_params(labelsize=arg['fontsize']*0.9)
-    ax3.tick_params(labelsize=arg['fontsize']*0.9)
+    if len(dO2_lp[kshape]['square'].keys()) != 0:
+        ax3.tick_params(labelsize=arg['fontsize']*0.9)
     if dO2_optode:
         ax11.tick_params(labelsize=arg['fontsize']*0.7)
         ax21.tick_params(labelsize=arg['fontsize']*0.7)
-        ax31.tick_params(labelsize=arg['fontsize']*0.7)
+        if len(dO2_lp[kshape]['square'].keys()) != 0:
+            ax31.tick_params(labelsize=arg['fontsize']*0.7)
 
         ax11.set_xlabel('Width [mm]', fontsize=arg['fontsize']*0.7)
         ax11.set_ylabel('Height [mm]', fontsize=arg['fontsize']*0.7)
         ax21.set_xlabel('Width [mm]', fontsize=arg['fontsize']*0.7)
         ax21.set_ylabel('Height [mm]', fontsize=arg['fontsize']*0.7)
-        ax31.set_xlabel('Width [mm]', fontsize=arg['fontsize']*0.7)
-        ax31.set_ylabel('Height [mm]', fontsize=arg['fontsize']*0.7)
+        if len(dO2_lp[kshape]['square'].keys()) != 0:
+            ax31.set_xlabel('Width [mm]', fontsize=arg['fontsize']*0.7)
+            ax31.set_ylabel('Height [mm]', fontsize=arg['fontsize']*0.7)
     fig_lp.text(0.4, 0.02, '$O_2$ concentration [%air]', fontsize=arg['fontsize'])
     fig_lp.text(0.01, 0.48, 'Depth [mm]', fontsize=arg['fontsize'], rotation='vertical')
 
@@ -479,7 +492,7 @@ def plotLP(dO2_lp, df_ms, header_ms, depth, kshape, depth_lp, s, arg, dO2_optode
 
 
 def plot_penetrationDepth(depth, ls_kernel, arg):
-    kernel_s = [k[0] for k in ls_kernel]
+    kernel_s = [k[1] for k in ls_kernel]
 
     # .....................
     fig, ax = plt.subplots(figsize=(5, 3.5))
@@ -545,6 +558,36 @@ def px2mm_conversion(df, px2mm, surface):
     col_new = df.columns.to_numpy() / px2mm
     df.index, df.columns = ind_new, col_new
     return df
+
+
+def round_decimals_up(number, decimals=2):
+    """
+    Returns a value rounded up to a specific number of decimal places.
+    """
+    if not isinstance(decimals, int):
+        raise TypeError("decimal places must be an integer")
+    elif decimals < 0:
+        raise ValueError("decimal places has to be 0 or more")
+    elif decimals == 0:
+        return math.ceil(number)
+
+    factor = 10 ** decimals
+    return math.ceil(number * factor) / factor
+
+
+def round_decimals_down(number, decimals=2):
+    """
+    Returns a value rounded down to a specific number of decimal places.
+    """
+    if not isinstance(decimals, int):
+        raise TypeError("decimal places must be an integer")
+    elif decimals < 0:
+        raise ValueError("decimal places has to be 0 or more")
+    elif decimals == 0:
+        return math.floor(number)
+
+    factor = 10 ** decimals
+    return math.floor(number * factor) / factor
 
 
 # =====================================================================================
@@ -714,31 +757,34 @@ def split2statics(dO2):
 
 
 def line_profile_v1(df, lp, lw):
-    # find closest value in df.columns
-    diff_min = (lp - lw / 2) - df.columns
-    diff_max = (lp + lw / 2) - df.columns
-    # print('line width [mm]:', lw)
-
-    for en, i in enumerate(diff_min):
-        if i == min(np.abs(diff_min)):
-            pos_min = (en, df.columns[en])
-    for en, i in enumerate(diff_max):
-        if i == min(np.abs(diff_max)):
-            pos_max = (en, df.columns[en])
-
-    if pos_min:
-        pass
+    if df.empty is True:
+        df_lp = None
     else:
-        pos_min = (None, None)
-    if pos_max:
-        pass
-    else:
-        pos_max = (None, None)
+        # find closest value in df.columns
+        diff_min = (lp - lw / 2) - df.columns
+        diff_max = (lp + lw / 2) - df.columns
+        # print('line width [mm]:', lw)
 
-    if pos_min == pos_max:
-        df_lp = pd.DataFrame(df[pos_min[1]])
-    else:
-        df_lp = df.loc[:, pos_min[1]:pos_max[1]]
+        for en, i in enumerate(diff_min):
+            if i == min(np.abs(diff_min)):
+                pos_min = (en, df.columns[en])
+        for en, i in enumerate(diff_max):
+            if i == min(np.abs(diff_max)):
+                pos_max = (en, df.columns[en])
+
+        if pos_min:
+            pass
+        else:
+            pos_min = (None, None)
+        if pos_max:
+            pass
+        else:
+            pos_max = (None, None)
+
+        if pos_min == pos_max:
+            df_lp = pd.DataFrame(df[pos_min[1]])
+        else:
+            df_lp = df.loc[:, pos_min[1]:pos_max[1]]
     return df_lp
 
 
@@ -1003,6 +1049,7 @@ def O2_analysis_area(para, iratio, iratio_std=None, int_type='norm'):
     x = 1 / k_mp * b
 
     df_x = pd.DataFrame(x, index=pd.DataFrame(iratio).index, columns=pd.DataFrame(iratio).columns)
+
     return df_x
 
 
@@ -1047,9 +1094,14 @@ def penetration_depth(dO2_lp, ls_kernel, df_ms, treshold):
     # combine relevant line profiles
     dprofile = dict()
     for kshape in ls_kernel:
-        depth = pd.concat([dO2_lp[kshape]['vertical'][0], dO2_lp[kshape]['horizontal'][0],
-                           dO2_lp[kshape]['square'][0]], axis=1)
-        depth.columns = [i + '-' + j for i in dO2_lp[kshape].keys() for j in ['mean', 'SD']]
+        if len(dO2_lp[kshape]['square'].keys()) != 0:
+            depth = pd.concat([dO2_lp[kshape]['vertical'][0], dO2_lp[kshape]['horizontal'][0],
+                               dO2_lp[kshape]['square'][0]], axis=1)
+            col = dO2_lp[kshape].keys()
+        else:
+            depth = pd.concat([dO2_lp[kshape]['vertical'][0], dO2_lp[kshape]['horizontal'][0]], axis=1)
+            col = ['vertical', 'horizontal']
+        depth.columns = [i + '-' + j for i in col for j in ['mean', 'SD']]
         dprofile[kshape] = depth
 
     # exponential decay for interpolation of micro-sensor data close to the transition
@@ -1058,12 +1110,41 @@ def penetration_depth(dO2_lp, ls_kernel, df_ms, treshold):
     # geometric intersection of line profile and O2 threshold for penetration depth
     dd = dict(map(lambda k: (k, pd.concat([dprofile[k].filter(like='mean'), data_ms], axis=1)), ls_kernel))
 
+    # minimal line profile
+    dd_min = dict(map(lambda k: (k, pd.concat([pd.DataFrame([dprofile[k][c + '-mean'] - dprofile[k][c + '-SD']
+                                                             for c in col], index=col).T, data_ms['microsensor']],
+                                              axis=1)), ls_kernel))
+    # dd_min = dict(map(lambda k: (
+    #     k, pd.concat([dprofile[k]['vertical-mean'] - dprofile[k]['vertical-SD'],
+    #                   dprofile[k]['horizontal-mean'] - dprofile[k]['horizontal-SD'],
+    #                   dprofile[k]['square-mean'] - dprofile[k]['square-SD'],
+    #                   data_ms['microsensor']], axis=1, keys=['vertical', 'horizontal', 'square', 'microsensor'])),
+    #                   ls_kernel))
+
+    # maximal line profile
+    dd_max = dict(map(lambda k: (k, pd.concat([pd.DataFrame([dprofile[k][c + '-mean'] + dprofile[k][c + '-SD']
+                                                             for c in col], index=col).T, data_ms['microsensor']],
+                                              axis=1)), ls_kernel))
+    # dd_max = dict(map(lambda k: (
+    #     k, pd.concat([dprofile[k]['vertical-mean'] + dprofile[k]['vertical-SD'],
+    #                   dprofile[k]['horizontal-mean'] + dprofile[k]['horizontal-SD'],
+    #                   dprofile[k]['square-mean'] + dprofile[k]['square-SD'],
+    #                   data_ms['microsensor']], axis=1, keys=['vertical', 'horizontal', 'square', 'microsensor'])),
+    #                   ls_kernel))
+
     ydepth = pd.concat([pd.DataFrame([geometric_intersection(treshold=treshold, dd=dd[k], column=d)[0][0]
                                       for d in dd[k].columns], index=dd[k].columns) for k in ls_kernel], axis=1).T
-    ydepth.index = ls_kernel
+    ydepth_min = pd.concat([pd.DataFrame([geometric_intersection(treshold=treshold, dd=dd_min[k], column=d)[0][0]
+                                          for d in dd_min[k].columns], index=dd_min[k].columns) for k in ls_kernel],
+                           axis=1).T
+    ydepth_max = pd.concat([pd.DataFrame([geometric_intersection(treshold=treshold, dd=dd_max[k], column=d)[0][0]
+                                          for d in dd_max[k].columns], index=dd_max[k].columns) for k in ls_kernel],
+                           axis=1).T
+
+    ydepth.index, ydepth_min.index, ydepth_max.index = ls_kernel, ls_kernel, ls_kernel
     ydepth.columns = [i.split('-')[0] for i in ydepth.columns]
 
-    return ydepth
+    return ydepth, ydepth_min, ydepth_max
 
 
 # =====================================================================================
@@ -1764,14 +1845,32 @@ def imageblur(kernel, kshape, dic_int, direction='horizontal'):
     return dst
 
 
+def savgol_smooth(dic_int, direction, window, polynom):
+    if direction == 'horizontal':
+        dst = [savgol_filter(i, window, polynom) for i in dic_int]
+    elif direction == 'vertical':
+        dst = np.transpose([savgol_filter(dic_int[:, i], window, polynom) for i in range(dic_int.shape[1])])
+    else:
+        raise ValueError('define direction of kernel as either horizontal or vertical')
+    return dst
+
+
 def blurimage(o, s, kernel, kshape, dint, px2mm=None, surface=None, conversion=True):
     # Depth profile with (horizontal, vertical, and square) Gaussian blur for one example
-    # vertical blur
-    dst_v = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=dint[o][s], direction='horizontal')
-    # horizontal blur
-    dst_h = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=dint[o][s], direction='horizontal')
-    # square blur
-    dst = imageblur(kernel=kernel, kshape=kshape, dic_int=dint[o][s], direction='horizontal')
+    if kernel == 'savgol':
+        # vertical blur
+        dst_v = savgol_smooth(dic_int=dint[o][s], window=kshape[1], polynom=kshape[0], direction='vertical')
+        # horizontal blur
+        dst_h = savgol_smooth(dic_int=dint[o][s], window=kshape[1], polynom=kshape[0], direction='horizontal')
+        # square blur
+        dst = None
+    else:
+        # vertical blur
+        dst_v = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=dint[o][s], direction='horizontal')
+        # horizontal blur
+        dst_h = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=dint[o][s], direction='horizontal')
+        # square blur
+        dst = imageblur(kernel=kernel, kshape=kshape, dic_int=dint[o][s], direction='horizontal')
 
     # combine all options in one dictionary
     dimages = dict({'vertical': dst_v, 'horizontal': dst_h, 'square': dst})
@@ -1783,6 +1882,60 @@ def blurimage(o, s, kernel, kshape, dint, px2mm=None, surface=None, conversion=T
         dimages = dict(map(lambda d: (d, px2mm_conversion(df=pd.DataFrame(dimages[d]), px2mm=px2mm,
                                                           surface=surface[int(o[-1])-1])), dimages.keys()))
     return dimages
+
+
+def blurimage_df(o, kernel, kshape, dint, inorm_uncer, px2mm=None, surface=None, conversion=True):
+    # split in mean and std
+    image_av = np.array(list(map(lambda u: [i.n for i in inorm_uncer[u]], range(len(inorm_uncer)))))
+    image_std = np.array(list(map(lambda u: [i.s for i in inorm_uncer[u]], range(len(inorm_uncer)))))
+
+    # Depth profile with (horizontal, vertical, and square) Gaussian blur for one example
+    if kernel == 'savgol':
+        # vertical blur
+        imgv_arr = savgol_smooth(dic_int=image_av, window=kshape[1], polynom=kshape[0], direction='vertical')
+        imgvSTD_arr = savgol_smooth(dic_int=image_std, window=kshape[1], polynom=kshape[0], direction='vertical')
+
+        # horizontal blur
+        imgh_arr = savgol_smooth(dic_int=image_av, window=kshape[1], polynom=kshape[0], direction='horizontal')
+        imghSTD_arr = savgol_smooth(dic_int=image_std, window=kshape[1], polynom=kshape[0], direction='horizontal')
+
+        # square blur
+        dst, dst_std = None, None
+    else:
+        # vertical blur
+        imgv_arr = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=np.array(image_av), direction='horizontal')
+        imgvSTD_arr = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=np.array(image_std),
+                                direction='horizontal')
+
+        # horizontal blur
+        imgh_arr = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=np.array(image_av), direction='horizontal')
+        imghSTD_arr = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=np.array(image_std),
+                                direction='horizontal')
+
+        # square blur
+        img_arr = imageblur(kernel=kernel, kshape=kshape, dic_int=np.array(image_av), direction='horizontal')
+        dst = pd.DataFrame(img_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+        imgSTD_arr = imageblur(kernel=kernel, kshape=kshape, dic_int=np.array(image_std), direction='horizontal')
+        dst_std = pd.DataFrame(imgSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+
+    # combine all options in one dictionary
+    dst_v = pd.DataFrame(imgv_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+    dst_v_std = pd.DataFrame(imgvSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+    dst_h = pd.DataFrame(imgh_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+    dst_h_std = pd.DataFrame(imghSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+
+    dimages = dict({'vertical': dst_v, 'horizontal': dst_h, 'square': dst})
+    dimagesSTD = dict({'vertical': dst_v_std, 'horizontal': dst_h_std, 'square': dst_std})
+
+    # convert from px to mm
+    if conversion is True:
+        if px2mm is None or surface is None:
+            raise ValueError('all parameter for conversion of px to mm are requires. Provide px2mm, surface parameter.')
+        dimages = dict(map(lambda d: (d, px2mm_conversion(df=pd.DataFrame(dimages[d]), px2mm=px2mm,
+                                                          surface=surface[int(o[-1]) - 1])), dimages.keys()))
+        dimagesSTD = dict(map(lambda d: (d, px2mm_conversion(df=pd.DataFrame(dimagesSTD[d]), px2mm=px2mm,
+                                                             surface=surface[int(o[-1]) - 1])), dimages.keys()))
+    return dimages, dimagesSTD
 # def blurimage(o, s, kernel, kshape, dint, px2mm, surface):
 #     # Depth profile with (horizontal, vertical, and square) Gaussian blur for one example
 #     # vertical blur
@@ -1814,48 +1967,17 @@ def blur_normIntensity(dint, I0, kshape, kernel='gauss', px2mm=None, surface=Non
     i0_mp = ufloat(I0[0], I0[1])
     iratio_arr = unumpy.uarray(dint, np.array(np.zeros(shape=(dint.shape))))
     inorm_uncer = iratio_arr / i0_mp
-    # split in mean and std
-    image_av = [[i.n for i in inorm_uncer[en]] for en in range(len(inorm_uncer))]
-    image_std = [[i.s for i in inorm_uncer[en]] for en in range(len(inorm_uncer))]
 
     # ......................................................................................
     # blur image
-    # vertical blur - mean & std
-    imgv_arr = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=np.array(image_av), direction='horizontal')
-    df_v = pd.DataFrame(imgv_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
-    imgvSTD_arr = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=np.array(image_std), direction='horizontal')
-    df_v_std = pd.DataFrame(imgvSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+    dimages, dimagesSTD = blurimage_df(o=o, kernel=kernel, kshape=kshape, dint=dint, inorm_uncer=inorm_uncer,
+                                       px2mm=px2mm, surface=surface, conversion=conversion)
 
-    # horizontal blur - mean & std
-    imgh_arr = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=np.array(image_av), direction='horizontal')
-    df_h = pd.DataFrame(imgh_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
-    imghSTD_arr = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=np.array(image_std), direction='horizontal')
-    df_h_std = pd.DataFrame(imghSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
-
-    # squared blur - mean & std
-    img_arr = imageblur(kernel=kernel, kshape=kshape, dic_int=np.array(image_av), direction='horizontal')
-    df_ = pd.DataFrame(img_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
-    imgSTD_arr = imageblur(kernel=kernel, kshape=kshape, dic_int=np.array(image_std), direction='horizontal')
-    df_std = pd.DataFrame(imgSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
-
-    # combine all options in one dictionary
-    dimages = dict({'vertical': df_v, 'horizontal': df_h, 'square': df_})
-    dimagesSTD = dict({'vertical': df_v_std, 'horizontal': df_h_std, 'square': df_std})
-
-    # ......................................................................................
-    # convert from px to mm
-    if conversion is True:
-        if px2mm is None or surface is None or o is None:
-            raise ValueError('all parameter for conversion of px into mm are required. Provide px2mm, surface parameter.')
-        dimages = dict(map(lambda d: (d, px2mm_conversion(df=pd.DataFrame(dimages[d]), surface=surface[int(o[-1]) - 1],
-                                                          px2mm=px2mm)), dimages.keys()))
-        dimagesSTD = dict(map(lambda d: (d, px2mm_conversion(df=pd.DataFrame(dimagesSTD[d]), px2mm=px2mm,
-                                                             surface=surface[int(o[-1]) - 1])), dimages.keys()))
     return dimages, dimagesSTD
 
 
 def O2blur_optode(inp, path_calib, kernel, kshape, px2mm, surface, depth_min, depth_max, dint_ch1, dint_ch2=None,
-                  int_type='ratio'):
+                  blur_pos='ratio'):
     # preparation
     o = inp.split(',')[0]
     s = inp.split(',')[1].strip()
@@ -1866,14 +1988,14 @@ def O2blur_optode(inp, path_calib, kernel, kshape, px2mm, surface, depth_min, de
 
     # -------------------------------------------
     # blur images
-    if int_type == 'norm':
-        dimages, dimagesSTD = blur_normIntensity(dint=dint_ch1[o][s], I0=para.loc['I0'].to_numpy(), kernel='gauss',
+    if blur_pos == 'norm':
+        dimages, dimagesSTD = blur_normIntensity(dint=dint_ch1[o][s], I0=para.loc['I0'].to_numpy(), kernel=kernel,
                                                  kshape=kshape, px2mm=px2mm, surface=surface, o=o, conversion=True)
     else:
         dblur_ch1 = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dint=dint_ch1, px2mm=px2mm, surface=surface)
-        if int_type == 'ratio':
+        if blur_pos == 'ratio':
             dimages = dblur_ch1
-        elif int_type == 'single':
+        elif blur_pos == 'single':
             # blur individual color channels, then determine ratiometric intensity
             dgreen_blur = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dint=dint_ch2, px2mm=px2mm, surface=surface)
             dimages = dict(map(lambda ax: (ax, dblur_ch1[ax] / dgreen_blur[ax]), dblur_ch1.keys()))
@@ -1884,9 +2006,10 @@ def O2blur_optode(inp, path_calib, kernel, kshape, px2mm, surface, depth_min, de
                              'single ... blur individual color channels')
 
     # crop to image frame of interest
-    dimg = dict(map(lambda d: (d, dimages[d].loc[depth_min:depth_max, :]), dimages.keys()))
-    if int_type == 'norm':
-        dimg_std = dict(map(lambda d: (d, dimagesSTD[d].loc[depth_min:depth_max, :]), dimagesSTD.keys()))
+    dimg = dict(map(lambda d: (d, dimages[d].loc[depth_min:depth_max, :] if dimages[d].empty is False else None),
+                dimages.keys()))
+    if blur_pos == 'norm':
+        dimg_std = dict(map(lambda d: (d, dimagesSTD[d].loc[depth_min:depth_max, :] if dimagesSTD[d].empty is False else None), dimagesSTD.keys()))
     else:
         dimg_std = dict(map(lambda d: (d, None), dimages.keys()))
 
@@ -1894,16 +2017,18 @@ def O2blur_optode(inp, path_calib, kernel, kshape, px2mm, surface, depth_min, de
     # determine O2 concentration
     dO2_calc_ = dict()
     for h in dimages.keys():
-        print(dimg[h])
-        dO2_calc = O2_analysis_area(para=para, iratio=dimg[h], iratio_std=dimg_std[h], int_type=int_type)
-        dO2_calc_[h] = dO2_calc
+        if dimages[h].empty is True:
+            pass
+        else:
+            dO2_calc = O2_analysis_area(para=para, iratio=dimg[h], iratio_std=dimg_std[h], int_type=blur_pos)
+            dO2_calc_[h] = dO2_calc
 
     # split in mean and SD
     dO2_optode = dict()
     for d in dO2_calc_.keys():
-        dO2op_av = pd.concat(dict(map(lambda c: (c, pd.DataFrame([i.n for i in dO2_calc_[d][c]],
-                                                                 index=dO2_calc_[d].index)), dO2_calc_[d].columns)),
-                             axis=1, ignore_index=True)
+        dO2op_av = pd.concat(dict(map(lambda c:
+                                      (c, pd.DataFrame([i.n for i in dO2_calc_[d][c]], index=dO2_calc_[d].index)),
+                                      dO2_calc_[d].columns)), axis=1, ignore_index=True)
         dO2op_av.columns = dO2_calc_[d].columns
         dO2_optode[d] = dO2op_av
 
@@ -1959,16 +2084,16 @@ def O2concentration_lp(para, ls_lw, ddlp, ddlp_std=None, int_type='norm'):
                                                                                   iratio=ddlp[d][lw_][c],
                                                                                   iratio_std=None)
                                                                  for c in ddlp[d][lw_].columns],
-                                                                axis=1).fillna(limit=5, method='ffill')),
-                                    ddlp[d].keys()))), ddlp.keys()))
+                                                                axis=1).fillna(limit=5, method='ffill')
+                       if ddlp[d][lw_] is not None else None), ddlp[d].keys()))), ddlp.keys()))
     else:
         dO2 = dict(map(lambda d:
                        (d, dict(map(lambda lw_: (lw_, pd.concat([O2_analysis_area(para=para, int_type=int_type,
                                                                                   iratio=ddlp[d][lw_][c],
                                                                                   iratio_std=ddlp_std[d][lw_][c])
                                                                  for c in ddlp[d][lw_].columns],
-                                                                axis=1).fillna(limit=5, method='ffill')),
-                                    ddlp[d].keys()))), ddlp.keys()))
+                                                                axis=1).fillna(limit=5, method='ffill')
+                       if ddlp[d][lw_] is not None else None), ddlp[d].keys()))), ddlp.keys()))
 
     # averaging for mean and SD
     dO2_depth = dict()
@@ -1976,15 +2101,20 @@ def O2concentration_lp(para, ls_lw, ddlp, ddlp_std=None, int_type='norm'):
         ddO2_dp = dict()
         for lw_ in ls_lw:
             d_av, d_sd = dict(), dict()
-            for c in dO2[d][lw_].columns:
-                d_av_ = pd.DataFrame([i.n for i in dO2[d][lw_][c].to_numpy()], index=dO2[d][lw_].index, columns=['mean'])
-                d_sd_ = pd.DataFrame([i.s for i in dO2[d][lw_][c].to_numpy()], index=dO2[d][lw_].index, columns=['SD'])
-                d_av[c], d_sd[c] = d_av_, d_sd_
+            if dO2[d][lw_] is not None:
+                for c in dO2[d][lw_].columns:
+                    d_av_ = pd.DataFrame([i.n for i in dO2[d][lw_][c].to_numpy()], index=dO2[d][lw_].index,
+                                         columns=['mean'])
+                    d_sd_ = pd.DataFrame([i.s for i in dO2[d][lw_][c].to_numpy()], index=dO2[d][lw_].index,
+                                         columns=['SD'])
+                    d_av[c], d_sd[c] = d_av_, d_sd_
 
-            dO2_dp = pd.concat([pd.concat(d_av, axis=1, ignore_index=True).mean(axis=1),
-                                pd.concat(d_sd, axis=1, ignore_index=True).mean(axis=1)], axis=1)
-            dO2_dp.columns = ['mean', 'SD']
-            ddO2_dp[lw_] = dO2_dp
+                dO2_dp = pd.concat([pd.concat(d_av, axis=1, ignore_index=True).mean(axis=1),
+                                    pd.concat(d_sd, axis=1, ignore_index=True).mean(axis=1)], axis=1)
+                dO2_dp.columns = ['mean', 'SD']
+                ddO2_dp[lw_] = dO2_dp
+            else:
+                dO2_dp = None
         dO2_depth[d] = ddO2_dp
 
     return dO2_depth
@@ -2020,7 +2150,7 @@ def O2_lineprofile_compare_v1(inp, surface, kernel, kshape, px2mm, lp, ls_lw, pa
 
 
 def O2_lineprofile_compare_v2(inp, surface, kernel, kshape, px2mm, lp, ls_lw, path_calib, dint_ch1, dint_ch2=None,
-                              int_type='norm'):
+                              blur_pos='norm'):
     # preparation
     o = inp.split(',')[0]
     s = inp.split(',')[1].strip()
@@ -2030,14 +2160,14 @@ def O2_lineprofile_compare_v2(inp, surface, kernel, kshape, px2mm, lp, ls_lw, pa
     para = calib_info[o][s]
 
     # blur images
-    if int_type == 'norm':
-        dimages, dimagesSTD = blur_normIntensity(dint=dint_ch1[o][s], I0=para.loc['I0'].to_numpy(), kernel='gauss',
+    if blur_pos == 'norm':
+        dimages, dimagesSTD = blur_normIntensity(dint=dint_ch1[o][s], I0=para.loc['I0'].to_numpy(), kernel=kernel,
                                                  kshape=kshape, px2mm=px2mm, surface=surface, o=o, conversion=True)
     else:
         dblur_ch1 = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dint=dint_ch1, px2mm=px2mm, surface=surface)
-        if int_type == 'ratio':
+        if blur_pos == 'ratio':
             dimages = dblur_ch1
-        elif int_type == 'single':
+        elif blur_pos == 'single':
             # blur individual color channels, then determine ratiometric intensity
             dgreen_blur = blurimage(o=o, s=s, kernel=kernel, kshape=kshape, dint=dint_ch2, px2mm=px2mm, surface=surface)
             dimages = dict(map(lambda ax: (ax, dblur_ch1[ax] / dgreen_blur[ax]), dblur_ch1.keys()))
@@ -2051,7 +2181,7 @@ def O2_lineprofile_compare_v2(inp, surface, kernel, kshape, px2mm, lp, ls_lw, pa
     ddlp = dict(map(lambda d: (d, dict(map(lambda lw_: (lw_, line_profile_v1(df=dimages[d], lw=lw_, lp=lp[0])),
                                            ls_lw))), dimages.keys()))
 
-    if int_type == 'norm':
+    if blur_pos == 'norm':
         ddlp_std = dict(map(lambda d:
                             (d, dict(map(lambda lw_: (lw_, line_profile_v1(df=dimagesSTD[d], lw=lw_, lp=lp[0])),
                                          ls_lw))), dimages.keys()))
@@ -2059,6 +2189,6 @@ def O2_lineprofile_compare_v2(inp, surface, kernel, kshape, px2mm, lp, ls_lw, pa
         ddlp_std = None
 
     # determine O2 concentration for line profile
-    dO2_lp = O2concentration_lp(para=para, ls_lw=ls_lw, ddlp=ddlp, ddlp_std=ddlp_std, int_type=int_type)
+    dO2_lp = O2concentration_lp(para=para, ls_lw=ls_lw, ddlp=ddlp, ddlp_std=ddlp_std, int_type=blur_pos)
     return dO2_lp
 
