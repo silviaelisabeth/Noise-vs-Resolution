@@ -25,6 +25,7 @@ import pandas as pd
 import numpy as np
 import random
 from lmfit import Model
+import scipy.signal
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
 from mcerp import *
@@ -132,6 +133,84 @@ def prepMS_plot(index_lp, dic_micro, offset):
     df_ms['Depth (mm)'] = [i - offset for i in df_ms['Depth (mm)']]
 
     return df_ms
+
+
+def sgolay2d(z, window_size, order, derivative=None):
+    """
+    """
+    # number of terms in the polynomial expression
+    n_terms = ( order + 1 ) * ( order + 2) / 2.0
+
+    if window_size % 2 == 0:
+        raise ValueError('window_size must be odd')
+
+    if window_size**2 < n_terms:
+        raise ValueError('order is too high for the window size')
+
+    half_size = window_size // 2
+
+    # exponents of the polynomial.
+    # p(x,y) = a0 + a1*x + a2*y + a3*x^2 + a4*y^2 + a5*x*y + ...
+    # this line gives a list of two item tuple. Each tuple contains the exponents of the k-th term. First element of
+    # tuple is for x second element for y.
+    exps = [(k-n, n) for k in range(order+1) for n in range(k+1)]
+
+    # coordinates of points
+    ind = np.arange(-half_size, half_size+1, dtype=np.float64)
+    dx = np.repeat(ind, window_size)
+    dy = np.tile(ind, [window_size, 1]).reshape(window_size**2, )
+
+    # build matrix of system of equation
+    A = np.empty((window_size**2, len(exps)))
+    for i, exp in enumerate(exps):
+        A[:, i] = (dx**exp[0]) * (dy**exp[1])
+
+    # pad input array with appropriate values at the four borders
+    new_shape = z.shape[0] + 2*half_size, z.shape[1] + 2*half_size
+    Z = np.zeros((new_shape))
+    # top band
+    band = z[0, :]
+    Z[:half_size, half_size:-half_size] = band - np.abs( np.flipud(z[1:half_size+1, :]) - band)
+    # bottom band
+    band = z[-1, :]
+    Z[-half_size:, half_size:-half_size] = band + np.abs(np.flipud(z[-half_size-1:-1, :]) -band)
+    # left band
+    band = np.tile(z[:, 0].reshape(-1, 1), [1, half_size])
+    Z[half_size:-half_size, :half_size] = band - np.abs(np.fliplr(z[:, 1:half_size+1]) - band)
+    # right band
+    band = np.tile(z[:, -1].reshape(-1, 1), [1, half_size])
+    Z[half_size:-half_size, -half_size:] = band + np.abs(np.fliplr(z[:, -half_size-1:-1]) - band)
+    # central band
+    Z[half_size:-half_size, half_size:-half_size] = z
+
+    # top left corner
+    band = z[0, 0]
+    Z[:half_size, :half_size] = band - np.abs(np.flipud(np.fliplr(z[1:half_size+1, 1:half_size+1])) - band)
+    # bottom right corner
+    band = z[-1, -1]
+    Z[-half_size:, -half_size:] = band + np.abs(np.flipud(np.fliplr(z[-half_size-1:-1, -half_size-1:-1])) - band)
+
+    # top right corner
+    band = Z[half_size, -half_size:]
+    Z[:half_size, -half_size:] = band - np.abs(np.flipud(Z[half_size+1:2*half_size+1, -half_size:]) - band)
+    # bottom left corner
+    band = Z[-half_size:, half_size].reshape(-1, 1)
+    Z[-half_size:, :half_size] = band - np.abs(np.fliplr(Z[-half_size:, half_size+1:2*half_size+1]) - band)
+
+    # solve system and convolve
+    if derivative == None:
+        m = np.linalg.pinv(A)[0].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, m, mode='valid')
+    elif derivative == 'col':
+        c = np.linalg.pinv(A)[1].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, -c, mode='valid')
+    elif derivative == 'row':
+        r = np.linalg.pinv(A)[2].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, -r, mode='valid')
+    elif derivative == 'both':
+        c = np.linalg.pinv(A)[1].reshape((window_size, -1))
+        r = np.linalg.pinv(A)[2].reshape((window_size, -1))
+        return scipy.signal.fftconvolve(Z, -r, mode='valid'), scipy.signal.fftconvolve(Z, -c, mode='valid')
 
 
 # ------------------------------------------------------------------------
@@ -492,8 +571,10 @@ def plotLP(dO2_lp, df_ms, header_ms, depth, kshape, depth_lp, s, arg, dO2_optode
 
 
 def plot_penetrationDepth(depth, ls_kernel, arg):
-    kernel_s = [k[1] for k in ls_kernel]
-
+    if isinstance(ls_kernel[0], tuple):
+        kernel_s = [k[1] for k in ls_kernel]
+    else:
+        kernel_s = ls_kernel
     # .....................
     fig, ax = plt.subplots(figsize=(5, 3.5))
     for en, c in enumerate(depth.columns):
@@ -1850,6 +1931,8 @@ def savgol_smooth(dic_int, direction, window, polynom):
         dst = [savgol_filter(i, window, polynom) for i in dic_int]
     elif direction == 'vertical':
         dst = np.transpose([savgol_filter(dic_int[:, i], window, polynom) for i in range(dic_int.shape[1])])
+    elif direction == 'square':
+        dst = sgolay2d(dic_int, window_size=window, order=polynom)
     else:
         raise ValueError('define direction of kernel as either horizontal or vertical')
     return dst
@@ -1863,7 +1946,7 @@ def blurimage(o, s, kernel, kshape, dint, px2mm=None, surface=None, conversion=T
         # horizontal blur
         dst_h = savgol_smooth(dic_int=dint[o][s], window=kshape[1], polynom=kshape[0], direction='horizontal')
         # square blur
-        dst = None
+        dst = savgol_smooth(dic_int=dint[o][s], window=kshape[1], polynom=kshape[0], direction='square')
     else:
         # vertical blur
         dst_v = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=dint[o][s], direction='horizontal')
@@ -1894,35 +1977,32 @@ def blurimage_df(o, kernel, kshape, dint, inorm_uncer, px2mm=None, surface=None,
         # vertical blur
         imgv_arr = savgol_smooth(dic_int=image_av, window=kshape[1], polynom=kshape[0], direction='vertical')
         imgvSTD_arr = savgol_smooth(dic_int=image_std, window=kshape[1], polynom=kshape[0], direction='vertical')
-
         # horizontal blur
         imgh_arr = savgol_smooth(dic_int=image_av, window=kshape[1], polynom=kshape[0], direction='horizontal')
         imghSTD_arr = savgol_smooth(dic_int=image_std, window=kshape[1], polynom=kshape[0], direction='horizontal')
-
         # square blur
-        dst, dst_std = None, None
+        img_arr = savgol_smooth(dic_int=image_av, window=kshape[1], polynom=kshape[0], direction='square')
+        imgSTD_arr = savgol_smooth(dic_int=image_std, window=kshape[1], polynom=kshape[0], direction='square')
     else:
         # vertical blur
         imgv_arr = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=np.array(image_av), direction='horizontal')
         imgvSTD_arr = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=np.array(image_std),
                                 direction='horizontal')
-
         # horizontal blur
         imgh_arr = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=np.array(image_av), direction='horizontal')
         imghSTD_arr = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=np.array(image_std),
                                 direction='horizontal')
-
         # square blur
         img_arr = imageblur(kernel=kernel, kshape=kshape, dic_int=np.array(image_av), direction='horizontal')
-        dst = pd.DataFrame(img_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
         imgSTD_arr = imageblur(kernel=kernel, kshape=kshape, dic_int=np.array(image_std), direction='horizontal')
-        dst_std = pd.DataFrame(imgSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
 
     # combine all options in one dictionary
     dst_v = pd.DataFrame(imgv_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
     dst_v_std = pd.DataFrame(imgvSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
     dst_h = pd.DataFrame(imgh_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
     dst_h_std = pd.DataFrame(imghSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+    dst = pd.DataFrame(img_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
+    dst_std = pd.DataFrame(imgSTD_arr, index=np.arange(0, dint.shape[0]), columns=np.arange(0, dint.shape[1]))
 
     dimages = dict({'vertical': dst_v, 'horizontal': dst_h, 'square': dst})
     dimagesSTD = dict({'vertical': dst_v_std, 'horizontal': dst_h_std, 'square': dst_std})
