@@ -80,12 +80,10 @@ def prepPlot_SVerrprop(error, dop1_value, dop2_value, op1_normSEM, op2_normSEM):
         derror1 = dict(map(lambda s: (s, dop1_value[s][['O2 SD', 'iratio SD']]), dop1_value.keys()))
         derror2 = dict(map(lambda s: (s, dop2_value[s][['O2 SD', 'iratio SD']]), dop2_value.keys()))
     else:
-        derror1 = op1_normSEM
-        derror2 = op2_normSEM
+        derror1, derror2 = op1_normSEM, op2_normSEM
 
     for s in derror1.keys():
-        derror1[s].columns = ['O2', 'iratio']
-        derror2[s].columns = ['O2', 'iratio']
+        derror1[s].columns, derror2[s].columns = ['O2', 'iratio'], ['O2', 'iratio']
 
     derror = [derror1, derror2]
 
@@ -136,21 +134,17 @@ def prepMS_plot(index_lp, dic_micro, offset):
 
 
 def sgolay2d(z, window_size, order, derivative=None):
-    """
-    """
     # number of terms in the polynomial expression
-    n_terms = ( order + 1 ) * ( order + 2) / 2.0
+    n_terms = (order + 1) * (order + 2) / 2.0
 
     if window_size % 2 == 0:
         raise ValueError('window_size must be odd')
-
     if window_size**2 < n_terms:
         raise ValueError('order is too high for the window size')
 
     half_size = window_size // 2
 
-    # exponents of the polynomial.
-    # p(x,y) = a0 + a1*x + a2*y + a3*x^2 + a4*y^2 + a5*x*y + ...
+    # exponents of the polynomial: p(x,y) = a0 + a1*x + a2*y + a3*x^2 + a4*y^2 + a5*x*y + ...
     # this line gives a list of two item tuple. Each tuple contains the exponents of the k-th term. First element of
     # tuple is for x second element for y.
     exps = [(k-n, n) for k in range(order+1) for n in range(k+1)]
@@ -189,7 +183,6 @@ def sgolay2d(z, window_size, order, derivative=None):
     # bottom right corner
     band = z[-1, -1]
     Z[-half_size:, -half_size:] = band + np.abs(np.flipud(np.fliplr(z[-half_size-1:-1, -half_size-1:-1])) - band)
-
     # top right corner
     band = Z[half_size, -half_size:]
     Z[:half_size, -half_size:] = band - np.abs(np.flipud(Z[half_size+1:2*half_size+1, -half_size:]) - band)
@@ -222,7 +215,6 @@ def plot_optode_avSD_v1(conc, dfoptode, error, col, mark, fs, RoI_op):
         for n in range(len(RoI_op)):
             ax2[0][n].set_title('Optode-' + str(n+1), fontsize=fs*0.9)
 
-    # ----------------------------------------------------------------------------
     # plotting part
     ls_handels = list()
     if len(RoI_op) == 1:
@@ -239,7 +231,6 @@ def plot_optode_avSD_v1(conc, dfoptode, error, col, mark, fs, RoI_op):
                 if o == 1:
                     ls_handels.append(l)
 
-    # ----------------------------------------------------------------------------
     # legend and axis layout / labelling
     if len(RoI_op) == 1:
         ax2[1].legend(handles=ls_handels, loc="upper left", bbox_to_anchor=[1, 0.9], shadow=True, fancybox=True)
@@ -248,27 +239,19 @@ def plot_optode_avSD_v1(conc, dfoptode, error, col, mark, fs, RoI_op):
                                      fancybox=True)
 
     if len(RoI_op) == 1:
-        # top row
-        ax2[0].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8)
-        # middle row
-        ax2[1].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8)
-        # bottom row
-        ax2[2].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8)
+        ax2[0].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8) # top row
+        ax2[1].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8) # middle row
+        ax2[2].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8) # bottom row
     else:
         for o in range(len(RoI_op)):
-            # top row
-            ax2[0][o].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8)
-            # middle row
-            ax2[1][o].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8)
-            # bottom row
-            ax2[2][o].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8)
+            ax2[0][o].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8) # top row
+            ax2[1][o].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8) # middle row
+            ax2[2][o].tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8) # bottom row
 
-    # x,y position
+    # x,y label position
     fig2.text(0.5, 0.075, 'O$_2$ concentration [%air]', va='center', ha='center', fontsize=fs * 1.2)
     fig2.text(0.025, 0.55, 'Ratio $R/G$', va='center', ha='center', rotation='vertical', fontsize=fs * 1.2)
 
-    # ----------------------------------------------------------------------------
-    # show plot
     plt.subplots_adjust(left=0.1, bottom=0.15, right=0.85, top=0.95)
     plt.show()
 
@@ -279,25 +262,19 @@ def plot_optode_set(o, s, conc, xinter, dfop, interpol, optode_sem, fs=11):
     fig2, ax2 = plt.subplots(figsize=(5, 3), frameon=False)
     ax2.set_title(o, fontsize=fs*0.9)
 
-    # ---------------------------------
     # plotting part
     ax2.errorbar(conc, [i.n for i in dfop[s]], optode_sem[s].values, linestyle='None', marker=mark[int(s[-1])-1],
                  fillstyle='none', color=col[int(s[-1])-1], ms=6, capsize=5, label=s)
     ax2.fill_between(x=xinter, y1=interpol[0](xinter), y2=interpol[1](xinter), color=col[int(s[-1])-1], alpha=0.2, lw=0)
 
-    # ---------------------------------
     # legend and axis layout / labelling
     ax2.legend(loc="upper left", bbox_to_anchor=[1, 0.9], shadow=True, fancybox=True)
+    ax2.tick_params(axis='both', which='both', direction='out', labelsize=fs*0.8)
 
-    # top row
-    ax2.tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8)
-    ax2.tick_params(axis='both', which='both', direction='out', labelsize=fs * 0.8)
+    # x,y label position
+    ax2.set_xlabel('O$_2$ concentration [%air]', va='center', ha='center', fontsize=fs*0.9)
+    ax2.set_ylabel('Ratio $R/G$', va='center', ha='center', rotation='vertical', fontsize=fs*0.9)
 
-    # x,y position
-    ax2.set_xlabel('O$_2$ concentration [%air]', va='center', ha='center', fontsize=fs * 0.9)
-    ax2.set_ylabel('Ratio $R/G$', va='center', ha='center', rotation='vertical', fontsize=fs *0.9)
-
-    # ----------------------------------------------------------------------------
     plt.tight_layout()
     plt.show()
 
@@ -317,45 +294,44 @@ def plot_SVerrorprop(dop1_value, dop1_param, derror, f1inter_mc, RoI1_av, RoI2_a
     # -----------------------------------------------------------------------------------------
     fig2, ax2 = plt.subplots(figsize=(8, 8), nrows=3, ncols=n, sharex=True, sharey=True, frameon=False)
     if n == 1:
-        ax2[0].set_title('Optode 1', fontsize=fs * 0.9)
+        ax2[0].set_title('Optode 1', fontsize=fs*0.9)
     else:
-        ax2[0][0].set_title('Optode 1', fontsize=fs * 0.9)
-        ax2[0][1].set_title('Optode 2', fontsize=fs * 0.9)
+        ax2[0][0].set_title('Optode 1', fontsize=fs*0.9), ax2[0][1].set_title('Optode 2', fontsize=fs*0.9)
 
-    xnew = np.linspace(0, 100, num=int(100 / 0.5 + 1))
+    num = int(100/0.5 + 1)
+    xnew = np.linspace(0, 100, num=num)
 
     ls_handels = list()
     if RoI1_av:
         for en, s in enumerate(dop1_value.keys()):
             name = s.split('t')[0] + 'tting ' + s.split('t')[-1]
-            O2new = np.linspace(dop1_value[s]['O2 mean'].loc[0], dop1_value[s]['O2 mean'].loc[100],
-                                num=int(100 / 0.5 + 1))
+            O2new = np.linspace(dop1_value[s]['O2 mean'].loc[0], dop1_value[s]['O2 mean'].loc[100], num=num)
             ynew = _simplifiedSV(xnew, k=dop1_param[s]['k'].mean, f=dop1_param[s]['f'].mean)
+            ydata = f1inter_mc[s]
 
             # dashed line for bestFit
             if n == 1:
                 ax2[en].plot(xnew, ynew, ls='-.', lw=1., color=col[en], label='bestFit')
                 l = ax2[en].errorbar(dop1_value[s]['O2 mean'], dop1_value[s]['iratio mean'].values, capsize=6, ms=6,
                                      xerr=derror[0][s]['O2'].values, linestyle='None', marker=mark[0], color=col[en],
-                                     yerr=derror[0][s]['iratio'].values, fillstyle='none',  label=name)
-                ax2[en].fill_between(x=O2new, y1=f1inter_mc[s][0](O2new), y2=f1inter_mc[s][1](O2new), color=col[en],
-                                     alpha=0.2, lw=0)
+                                     yerr=derror[0][s]['iratio'].values, fillstyle='none', label=name)
+                ax2[en].fill_between(x=O2new, y1=ydata[0](O2new), y2=ydata[1](O2new), color=col[en], alpha=0.2, lw=0)
+                ls_handels.append(l)
             else:
                 ax2[en][0].plot(xnew, ynew, ls='-.', lw=1., color=col[en], label='bestFit')
                 l = ax2[en][0].errorbar(dop1_value[s]['O2 mean'], dop1_value[s]['iratio mean'].values, capsize=6, ms=6,
                                         xerr=derror[0][s]['O2'].values, linestyle='None', marker=mark[0], color=col[en],
                                         fillstyle='none', label=name)
-                ax2[en][0].fill_between(x=O2new, y1=f1inter_mc[s][0](O2new), y2=f1inter_mc[s][1](O2new), color=col[en],
-                                        lw=0, alpha=0.2)
+                ax2[en][0].fill_between(x=O2new, y1=ydata[0](O2new), y2=ydata[1](O2new), color=col[en], lw=0, alpha=0.2)
                 ls_handels.append(l)
 
     ls_handels = list()
     if RoI2_av:
         for en, s in enumerate(dop2_value.keys()):
             name = s.split('t')[0] + 'tting ' + s.split('t')[-1]
-            O2new = np.linspace(dop2_value[s]['O2 mean'].loc[0], dop2_value[s]['O2 mean'].loc[100],
-                                num=int(100 / 0.5 + 1))
+            O2new = np.linspace(dop2_value[s]['O2 mean'].loc[0], dop2_value[s]['O2 mean'].loc[100], num=num)
             ynew = _simplifiedSV(xnew, k=dop2_param[s]['k'].mean, f=dop2_param[s]['f'].mean)
+            ydata = f2inter_mc[s]
 
             # dashed line for bestFit
             if n == 1:
@@ -363,29 +339,25 @@ def plot_SVerrorprop(dop1_value, dop1_param, derror, f1inter_mc, RoI1_av, RoI2_a
                 l = ax2[en].errorbar(dop2_value[s]['O2 mean'], dop2_value[s]['iratio mean'].values, capsize=6, ms=6,
                                      xerr=derror[1][s]['O2'].values, linestyle='None', marker=mark[0], color=col[en],
                                      fillstyle='none', label=name)
-                ax2[en].fill_between(x=O2new, y1=f2inter_mc[s][0](O2new),
-                                     y2=f2inter_mc[s][1](O2new), color=col[en], alpha=0.2, lw=0)
+                ax2[en].fill_between(x=O2new, y1=ydata[0](O2new), color=col[en], alpha=0.2, lw=0, y2=ydata[1](O2new))
                 ls_handels.append(l)
             else:
                 ax2[en][1].plot(xnew, ynew, ls='-.', lw=1., color=col[en], label='bestFit')
                 l = ax2[en][1].errorbar(dop2_value[s]['O2 mean'], dop2_value[s]['iratio mean'].values, capsize=6, ms=6,
                                         xerr=derror[1][s]['O2'].values, linestyle='None', marker=mark[0], color=col[en],
                                         fillstyle='none', label=name)
-
-                ax2[en][1].fill_between(x=O2new, y1=f2inter_mc[s][0](O2new), color=col[en],
-                                        lw=0, y2=f2inter_mc[s][1](O2new), alpha=0.2)
+                ax2[en][1].fill_between(x=O2new, y1=ydata[0](O2new), color=col[en], lw=0, alpha=0.2, y2=ydata[1](O2new))
                 ls_handels.append(l)
 
-    # ----------------------------------------------------------------------------
     # legend and axis layout / labelling
     if n == 1:
         ax2[1].legend(handles=ls_handels, loc="upper left", bbox_to_anchor=[1, 0.9], shadow=True, fancybox=True)
     else:
         ax2[1][1].legend(handles=ls_handels, loc="upper left", bbox_to_anchor=[1, 0.9], shadow=True, fancybox=True)
-    # ---------------------------
-    # x,y position
-    fig2.text(0.5, 0.018, 'O$_2$ concentration [%air]', va='center', ha='center', fontsize=fs * 1.2)
-    fig2.text(0.025, 0.55, 'Ratio $R/G$', va='center', ha='center', rotation='vertical', fontsize=fs * 1.2)
+
+    # x,y label position
+    fig2.text(0.5, 0.018, 'O$_2$ concentration [%air]', va='center', ha='center', fontsize=fs*1.2)
+    fig2.text(0.025, 0.55, 'Ratio $R/G$', va='center', ha='center', rotation='vertical', fontsize=fs*1.2)
     plt.subplots_adjust(left=0.1, bottom=0.1, right=0.85, top=0.95)
     plt.show()
 
@@ -406,7 +378,6 @@ def plot_optode_set_SV(o, s, en, dfop, dop_para, dferr, finter_mc, fs=11):
                  linestyle='None', marker=mark[0], fillstyle='none', ms=6, label=s)
     ax2.fill_between(x=O2new, y1=finter_mc[0](O2new), y2=finter_mc[1](O2new), color=col[en - 1], alpha=0.2, lw=0)
 
-    # ----------------------------------------------------------------------------
     # x,y label position
     fig2.text(0.5, 0.04, 'O$_2$ concentration [%air]', va='center', ha='center', fontsize=fs)
     fig2.text(0.025, 0.55, 'Ratio $R/G$', va='center', ha='center', rotation='vertical', fontsize=fs)
@@ -419,7 +390,6 @@ def plot_optode_set_SV(o, s, en, dfop, dop_para, dferr, finter_mc, fs=11):
 def plot_wholeImage3D(dO2_mean, unit, pad=2):
     xx, yy = np.meshgrid(dO2_mean.index.to_numpy(), dO2_mean.columns.to_numpy())
 
-    # -----------------------------------------------------------------------
     # 3D image of full area
     fig = plt.figure(figsize=(10, 8))
     ax = fig.gca(projection='3d')
@@ -454,7 +424,6 @@ def plot_optode2D(o, s, px2mm, surface, dO2_av, depth_range, width_range, figsiz
     extent = [df_data.columns[0], df_data.columns[-1],  # x-axis, e.g. columns
               df_data.index[0], df_data.index[-1]]  # y-axis, e.g. index
 
-    # --------------------------
     # plotting
     fig, ax = plt.subplots(figsize=figsize)
     sur = ax.imshow(df_data, extent=extent, cmap='magma_r', vmin=vmin, vmax=vmax)
@@ -493,7 +462,6 @@ def plotLP(dO2_lp, df_ms, header_ms, depth, kshape, depth_lp, s, arg, dO2_optode
     if len(dO2_lp[kshape]['square'].keys()) != 0:
         ax3.set_title('(C) Square blur', fontsize=fs, loc='left')
 
-    # ..........................................
     # plot line profile
     # horizontal
     df_h = dO2_lp[kshape]['horizontal'][arg['lw']].fillna(limit=5, method='ffill').loc[depth_lp[0]: depth_lp[1]]
@@ -528,7 +496,7 @@ def plotLP(dO2_lp, df_ms, header_ms, depth, kshape, depth_lp, s, arg, dO2_optode
             op3 = ax31.imshow(dO2_optode[kshape]['square'], extent=extent, aspect=arg['aspect'], cmap=arg['cmap'],
                               vmin=arg['vmin op'], vmax=arg['vmax op'])
 
-        # colorbar
+        # color bar
         fig_lp.colorbar(op1, aspect=10, shrink=0.8, ax=ax11)
         fig_lp.colorbar(op2, aspect=10, shrink=0.8, ax=ax21)
         if len(dO2_lp[kshape]['square'].keys()) != 0:
@@ -710,12 +678,11 @@ def interpolation_SDmc(df, s, method='cubic'):
 def channel_division(dconc, dch_num, dch_denom, s):
     dratio = dict()
     for c in dconc[s]:
-        dratio[c] = [dch_num[s][str(c) + '%'][n] / dch_denom[s][str(c) + '%'][n]
-                     for n in range(len(dch_num[s][str(c) + '%']))]
+        dratio[c] = [dch_num[s][str(c)+'%'][n] / dch_denom[s][str(c)+'%'][n] for n in range(len(dch_num[s][str(c)+'%']))]
     return dratio
 
 
-def ratiometric_intensity(path, crop_op, RoI1, RoI2, channel):
+def ratiometric_intensity(path, crop_op, channel, RoI1=None, RoI2=None):
     # RoI are areas defined anti-clockwise starting from the top left corner with P(col / ind)
     if crop_op:
         pass
@@ -743,24 +710,25 @@ def ratiometric_intensity(path, crop_op, RoI1, RoI2, channel):
     # determine number of pixels within the defined RoI = sample size
     if RoI1:
         npx1 = (RoI1[0][1][1] - RoI1[0][0][1]) * (RoI1[0][2][0] - RoI1[0][0][0])
+    else:
+        npx1 = 0
     if RoI2:
         npx2 = (RoI2[0][1][1] - RoI2[0][0][1]) * (RoI2[0][2][0] - RoI2[0][0][0])
+    else:
+        npx2 = 0
 
     # ----------------------------------------------------------
-    # signal averaged within RoI used as start/input signal for uncertainty propagation
-    # averaging each RoI for all optodes and settings
+    # signal averaged within RoI used as start/input signal for uncertainty propagation averaging each RoI for all
+    # optodes and settings
     if RoI1:  # optode 1
         dfop1_set1 = averaging_areas(doptode_set=optode1['set1'])
         dfop1_set2 = averaging_areas(doptode_set=optode1['set2'])
         dfop1_set3 = averaging_areas(doptode_set=optode1['set3'])
 
         conc = dfop1_set1.index.levels[0].to_numpy()
-        dfop1 = dict({'set1': [ufloat(dfop1_set1.loc[i, 'mean'], dfop1_set1.loc[i, 'SD_area'])
-                               for i in dfop1_set1.index],
-                      'set2': [ufloat(dfop1_set2.loc[i, 'mean'], dfop1_set2.loc[i, 'SD_area'])
-                               for i in dfop1_set2.index],
-                      'set3': [ufloat(dfop1_set3.loc[i, 'mean'], dfop1_set3.loc[i, 'SD_area'])
-                               for i in dfop1_set3.index]})
+        dfop1 = dict({'set1': [ufloat(dfop1_set1.loc[i, 'mean'], dfop1_set1.loc[i, 'SD_area']) for i in dfop1_set1.index],
+                      'set2': [ufloat(dfop1_set2.loc[i, 'mean'], dfop1_set2.loc[i, 'SD_area']) for i in dfop1_set2.index],
+                      'set3': [ufloat(dfop1_set3.loc[i, 'mean'], dfop1_set3.loc[i, 'SD_area']) for i in dfop1_set3.index]})
         dfop1 = pd.DataFrame(dfop1, index=conc)
     else:
         dfop1 = None
@@ -770,12 +738,9 @@ def ratiometric_intensity(path, crop_op, RoI1, RoI2, channel):
         dfop2_set3 = averaging_areas(doptode_set=optode2['set3'])
 
         conc = dfop2_set1.index.levels[0].to_numpy()
-        dfop2 = dict({'set1': [ufloat(dfop2_set1.loc[i, 'mean'], dfop2_set1.loc[i, 'SD_area'])
-                               for i in dfop2_set1.index],
-                      'set2': [ufloat(dfop2_set2.loc[i, 'mean'], dfop2_set2.loc[i, 'SD_area'])
-                               for i in dfop2_set2.index],
-                      'set3': [ufloat(dfop2_set3.loc[i, 'mean'], dfop2_set3.loc[i, 'SD_area'])
-                               for i in dfop2_set3.index]})
+        dfop2 = dict({'set1': [ufloat(dfop2_set1.loc[i, 'mean'], dfop2_set1.loc[i, 'SD_area']) for i in dfop2_set1.index],
+                      'set2': [ufloat(dfop2_set2.loc[i, 'mean'], dfop2_set2.loc[i, 'SD_area']) for i in dfop2_set2.index],
+                      'set3': [ufloat(dfop2_set3.loc[i, 'mean'], dfop2_set3.loc[i, 'SD_area']) for i in dfop2_set3.index]})
         dfop2 = pd.DataFrame(dfop2, index=conc)
     else:
         dfop2 = None
@@ -842,9 +807,7 @@ def line_profile_v1(df, lp, lw):
         df_lp = None
     else:
         # find closest value in df.columns
-        diff_min = (lp - lw / 2) - df.columns
-        diff_max = (lp + lw / 2) - df.columns
-        # print('line width [mm]:', lw)
+        diff_min, diff_max = (lp - lw / 2) - df.columns, (lp + lw / 2) - df.columns
 
         for en, i in enumerate(diff_min):
             if i == min(np.abs(diff_min)):
@@ -906,33 +869,34 @@ def optodePrep2D(o, s, dO2_av, px2mm, baseline, depth_range=None, width_range=No
 def sem_optode(dfop, RoI, conc):
     n = np.sqrt(sum([(RoI[i][1][1] - RoI[i][0][1])*(RoI[i][2][0] - RoI[i][0][0]) for i in range(len(RoI))]))
     dfop_sem = dict(map(lambda s: (s, [i.s/n for i in dfop[s]]), dfop.keys()))
-    optode_sem = pd.concat(list(map(lambda s: pd.DataFrame([np.mean(dfop_sem[s][c:(c+1)])
-                                                            for c in range(len(conc))], index=conc, columns=[s]),
-                                    dfop.keys())), axis=1)
+
+    optode_sem = pd.concat(list(map(lambda s: pd.DataFrame([np.mean(dfop_sem[s][c:(c+1)]) for c in range(len(conc))],
+                                                           index=conc, columns=[s]), dfop.keys())), axis=1)
     return optode_sem, n
 
 
-def uncertainty(dfop1, dfop2, para, RoI1, RoI2, conc, method='cubic'):
+def uncertainty(para, RoI1, RoI2, conc, dfop1=None, dfop2=None, method='cubic'):
     # interpolation for SD
-    if len(dfop1) > 0:
+    if isinstance(dfop1, pd.DataFrame):
         f_op1 = dict(map(lambda s: (s, interpolation_SD(conc=para['concentration'], dfop=dfop1, s=s, method=method)),
                          dfop1.columns))
+        # standard error of the mean
+        optode1_sem, n1 = sem_optode(dfop=dfop1, RoI=RoI1, conc=conc)
+        # combine for output
+        uncer_op1 = dict({'SD_interpol': f_op1, 'sem': optode1_sem, 'sample size': n1})
     else:
-        f_op1 = None
+        uncer_op1 = None
 
-    if len(dfop2) > 0:
+    if isinstance(dfop2, pd.DataFrame):
         f_op2 = dict(map(lambda s: (s, interpolation_SD(conc=para['concentration'], dfop=dfop2, s=s, method=method)),
                          dfop2.columns))
+        # standard error of the mean
+        optode2_sem, n2 = sem_optode(dfop=dfop2, RoI=RoI2, conc=conc)
+        # combine for output
+        uncer_op2 = dict({'SD_interpol': f_op2, 'sem': optode2_sem, 'sample size': n2})
     else:
-        f_op2 = None
+        uncer_op2 = None
 
-    # standard error of the mean
-    optode1_sem, n1 = sem_optode(dfop=dfop1, RoI=RoI1, conc=conc)
-    optode2_sem, n2 = sem_optode(dfop=dfop2, RoI=RoI2, conc=conc)
-
-    # combine for output
-    uncer_op1 = dict({'SD_interpol': f_op1, 'sem': optode1_sem, 'sample size': n1})
-    uncer_op2 = dict({'SD_interpol': f_op2, 'sem': optode2_sem, 'sample size': n2})
     return uncer_op1, uncer_op2
 
 
@@ -949,7 +913,6 @@ def lin_propagation(dfop1, dfop2, n1, n2, RoI1, RoI2, conc):
         optode2_norm = None
     optode_norm = [optode1_norm, optode2_norm]
 
-    # -----------------------------------------------------------
     # standard error of the mean
     if RoI1:
         optode1_norm_SEM = dict(map(lambda s: (s, pd.DataFrame([i.s / n1 for i in optode1_norm[s]],
@@ -1007,11 +970,9 @@ def _simplifiedSV(x, f, k):
     :param x:   list
     :param k:   np.float
     :param f:   np.float
-    :return:
+    :return: iratio:    normalized signal i0/i
     """
-    # i0/i
-    iratio = 1 / (f / (1. + k*x) + (1.-f))
-    return iratio
+    return 1 / (f / (1. + k*x) + (1.-f))
 
 
 def _simplified_SVFit_1run(data, conc, par0=None):
@@ -1068,12 +1029,9 @@ def o2_calculation(inp, dict_ratio_run1, dict_ratio_run2, dpara, surface, px2mm,
 
     dO2_calc = dict()
     for o in dratio.keys():
-        print(o, '...')
         if dratio[o]:
             dic_cal = dict(map(lambda s:
-                               (s, O2_analysis_area(f=dpara[o][s].loc['f'].to_numpy(), k=dpara[o][s].loc['k'].to_numpy(),
-                                                    I0=dpara[o][s].loc['i0'].to_numpy(), iratio=dratio[o][s])),
-                               dratio[o].keys()))
+                               (s, O2_analysis_area(para=dpara[o][s], iratio=dratio[o][s])), dratio[o].keys()))
             dO2_calc[o] = dic_cal
 
     # post-processing
@@ -1126,9 +1084,9 @@ def O2_analysis_area(para, iratio, iratio_std=None, int_type='norm'):
     # intermediate value calculation for x = 1/k * (np.divide(f, np.divide(1, inorm) + f - 1) - 1)
     a = int_arr + f_mp - 1
     b = f_mp / a - 1
+
     # final O2 concentration
     x = 1 / k_mp * b
-
     df_x = pd.DataFrame(x, index=pd.DataFrame(iratio).index, columns=pd.DataFrame(iratio).columns)
 
     return df_x
@@ -1162,7 +1120,6 @@ def geometric_intersection(treshold, dd, column):
 
     # geometric determination of intersection points
     intersection = first_line.intersection(second_line)
-
     try:
         xdata = LineString(intersection).xy
     except:
@@ -1195,23 +1152,11 @@ def penetration_depth(dO2_lp, ls_kernel, df_ms, treshold):
     dd_min = dict(map(lambda k: (k, pd.concat([pd.DataFrame([dprofile[k][c + '-mean'] - dprofile[k][c + '-SD']
                                                              for c in col], index=col).T, data_ms['microsensor']],
                                               axis=1)), ls_kernel))
-    # dd_min = dict(map(lambda k: (
-    #     k, pd.concat([dprofile[k]['vertical-mean'] - dprofile[k]['vertical-SD'],
-    #                   dprofile[k]['horizontal-mean'] - dprofile[k]['horizontal-SD'],
-    #                   dprofile[k]['square-mean'] - dprofile[k]['square-SD'],
-    #                   data_ms['microsensor']], axis=1, keys=['vertical', 'horizontal', 'square', 'microsensor'])),
-    #                   ls_kernel))
 
     # maximal line profile
     dd_max = dict(map(lambda k: (k, pd.concat([pd.DataFrame([dprofile[k][c + '-mean'] + dprofile[k][c + '-SD']
                                                              for c in col], index=col).T, data_ms['microsensor']],
                                               axis=1)), ls_kernel))
-    # dd_max = dict(map(lambda k: (
-    #     k, pd.concat([dprofile[k]['vertical-mean'] + dprofile[k]['vertical-SD'],
-    #                   dprofile[k]['horizontal-mean'] + dprofile[k]['horizontal-SD'],
-    #                   dprofile[k]['square-mean'] + dprofile[k]['square-SD'],
-    #                   data_ms['microsensor']], axis=1, keys=['vertical', 'horizontal', 'square', 'microsensor'])),
-    #                   ls_kernel))
 
     ydepth = pd.concat([pd.DataFrame([geometric_intersection(treshold=treshold, dd=dd[k], column=d)[0][0]
                                       for d in dd[k].columns], index=dd[k].columns) for k in ls_kernel], axis=1).T
@@ -2016,30 +1961,6 @@ def blurimage_df(o, kernel, kshape, dint, inorm_uncer, px2mm=None, surface=None,
         dimagesSTD = dict(map(lambda d: (d, px2mm_conversion(df=pd.DataFrame(dimagesSTD[d]), px2mm=px2mm,
                                                              surface=surface[int(o[-1]) - 1])), dimages.keys()))
     return dimages, dimagesSTD
-# def blurimage(o, s, kernel, kshape, dint, px2mm, surface):
-#     # Depth profile with (horizontal, vertical, and square) Gaussian blur for one example
-#     # vertical blur
-#     dst_v = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=dint[o][s], direction='horizontal')
-#     # horizontal blur
-#     dst_h = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=dint[o][s], direction='horizontal')
-#     # square blur
-#     dst = imageblur(kernel=kernel, kshape=kshape, dic_int=dint[o][s], direction='horizontal')
-#
-#     # .........................................................
-#     # convert from px to mm
-#     # vertical
-#     df_v = px2mm_conversion(df=pd.DataFrame(dst_v), px2mm=px2mm, surface=surface[int(o[-1])-1])
-#
-#     # horizontal
-#     df_h = px2mm_conversion(df=pd.DataFrame(dst_h), px2mm=px2mm, surface=surface[int(o[-1]) - 1])
-#
-#     # square
-#     df = px2mm_conversion(df=pd.DataFrame(dst), px2mm=px2mm, surface=surface[int(o[-1]) - 1])
-#
-#     # combine all options in one dictionary
-#     dimages = dict({'vertical': df_v, 'horizontal': df_h, 'square': df})
-#
-#     return dimages
 
 
 def blur_normIntensity(dint, I0, kshape, kernel='gauss', px2mm=None, surface=None, o=None, conversion=True):
@@ -2194,7 +2115,7 @@ def O2concentration_lp(para, ls_lw, ddlp, ddlp_std=None, int_type='norm'):
                 dO2_dp.columns = ['mean', 'SD']
                 ddO2_dp[lw_] = dO2_dp
             else:
-                dO2_dp = None
+                ddO2_dp[lw_] = None
         dO2_depth[d] = ddO2_dp
 
     return dO2_depth
@@ -2203,8 +2124,7 @@ def O2concentration_lp(para, ls_lw, ddlp, ddlp_std=None, int_type='norm'):
 def O2_lineprofile_compare_v1(inp, surface, kernel, kshape, px2mm, lp, ls_lw, path_calib, dint_ch1, dint_ch2=None,
                               blur_type='ratio'):
     # preparation
-    o = inp.split(',')[0]
-    s = inp.split(',')[1].strip()
+    o, s = inp.split(',')[0], inp.split(',')[1].strip()
 
     # load calibration
     calib_info = load_calibration_para_v1(path_calib=path_calib)
@@ -2220,8 +2140,8 @@ def O2_lineprofile_compare_v1(inp, surface, kernel, kshape, px2mm, lp, ls_lw, pa
         dimages = dict(map(lambda ax: (ax, dblur_ch1[ax] / dgreen_blur[ax]), dblur_ch1.keys()))
 
     # crop to image width of interest
-    ddlp = dict(map(lambda d: (d, dict(map(lambda lw_: (lw_, line_profile_v1(df=dimages[d], lw=lw_, lp=lp[0])),
-                                           ls_lw))), dimages.keys()))
+    ddlp = dict(map(lambda d: (d, dict(map(lambda lw_: (lw_, line_profile_v1(df=dimages[d], lw=lw_, lp=lp[0])), ls_lw))),
+                    dimages.keys()))
 
     # determine O2 concentration for line profile
     dO2_lp = O2concentration_lp(para=para, ddlp=ddlp, ls_lw=ls_lw)
