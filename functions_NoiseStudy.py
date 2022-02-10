@@ -457,10 +457,10 @@ def plotLP(dO2_lp, df_ms, header_ms, depth, kshape, depth_lp, s, arg, dO2_optode
             if len(dO2_lp[kshape]['square'].keys()) != 0:
                 ax31 = fig_lp.add_axes([0.75, 0.2, 0.2, 0.2])
 
-    ax1.set_title('(A) Horizontal blur', fontsize=fs, loc='left')
-    ax2.set_title('(B) Vertical blur', fontsize=fs, loc='left')
+    ax1.set_title('(A) Horizontal smoothing', fontsize=fs, loc='left')
+    ax2.set_title('(B) Vertical smoothing', fontsize=fs, loc='left')
     if len(dO2_lp[kshape]['square'].keys()) != 0:
-        ax3.set_title('(C) Square blur', fontsize=fs, loc='left')
+        ax3.set_title('(C) Square smoothing', fontsize=fs, loc='left')
 
     # plot line profile
     # horizontal
@@ -726,9 +726,12 @@ def ratiometric_intensity(path, crop_op, channel, RoI1=None, RoI2=None):
         dfop1_set3 = averaging_areas(doptode_set=optode1['set3'])
 
         conc = dfop1_set1.index.levels[0].to_numpy()
-        dfop1 = dict({'set1': [ufloat(dfop1_set1.loc[i, 'mean'], dfop1_set1.loc[i, 'SD_area']) for i in dfop1_set1.index],
-                      'set2': [ufloat(dfop1_set2.loc[i, 'mean'], dfop1_set2.loc[i, 'SD_area']) for i in dfop1_set2.index],
-                      'set3': [ufloat(dfop1_set3.loc[i, 'mean'], dfop1_set3.loc[i, 'SD_area']) for i in dfop1_set3.index]})
+        dfop1 = dict({'set1': [ufloat(dfop1_set1.loc[i, 'mean'], dfop1_set1.loc[i, 'SD_area'])
+                               for i in dfop1_set1.index],
+                      'set2': [ufloat(dfop1_set2.loc[i, 'mean'], dfop1_set2.loc[i, 'SD_area'])
+                               for i in dfop1_set2.index],
+                      'set3': [ufloat(dfop1_set3.loc[i, 'mean'], dfop1_set3.loc[i, 'SD_area'])
+                               for i in dfop1_set3.index]})
         dfop1 = pd.DataFrame(dfop1, index=conc)
     else:
         dfop1 = None
@@ -738,9 +741,12 @@ def ratiometric_intensity(path, crop_op, channel, RoI1=None, RoI2=None):
         dfop2_set3 = averaging_areas(doptode_set=optode2['set3'])
 
         conc = dfop2_set1.index.levels[0].to_numpy()
-        dfop2 = dict({'set1': [ufloat(dfop2_set1.loc[i, 'mean'], dfop2_set1.loc[i, 'SD_area']) for i in dfop2_set1.index],
-                      'set2': [ufloat(dfop2_set2.loc[i, 'mean'], dfop2_set2.loc[i, 'SD_area']) for i in dfop2_set2.index],
-                      'set3': [ufloat(dfop2_set3.loc[i, 'mean'], dfop2_set3.loc[i, 'SD_area']) for i in dfop2_set3.index]})
+        dfop2 = dict({'set1': [ufloat(dfop2_set1.loc[i, 'mean'], dfop2_set1.loc[i, 'SD_area'])
+                               for i in dfop2_set1.index],
+                      'set2': [ufloat(dfop2_set2.loc[i, 'mean'], dfop2_set2.loc[i, 'SD_area'])
+                               for i in dfop2_set2.index],
+                      'set3': [ufloat(dfop2_set3.loc[i, 'mean'], dfop2_set3.loc[i, 'SD_area'])
+                               for i in dfop2_set3.index]})
         dfop2 = pd.DataFrame(dfop2, index=conc)
     else:
         dfop2 = None
@@ -834,7 +840,11 @@ def line_profile_v1(df, lp, lw):
 
 def optodePrep2D(o, s, dO2_av, px2mm, baseline, depth_range=None, width_range=None):
     # image preparation and cropping image depth/width
-    df_ex = dO2_av[o][s]
+    if isinstance(dO2_av, dict):
+        df_ex = dO2_av[o][s]
+    else:
+        df_ex = dO2_av
+
     xnew = df_ex.index
     df = df_ex.copy()
     df.index = reversed(xnew)
@@ -847,12 +857,15 @@ def optodePrep2D(o, s, dO2_av, px2mm, baseline, depth_range=None, width_range=No
 
         crop_px1 = list()
         for en, p in enumerate(px_range_mm):
+
             if p.round(1) == depth_range[0]:
+
                 crop_px1.append(en)
         crop_px2 = list()
         for en, p in enumerate(px_range_mm):
             if p.round(1) == depth_range[1]:
                 crop_px2.append(en)
+
         crop_px = int(np.mean(crop_px1)), int(np.mean(crop_px2))
 
         df_ = df.loc[df.index[min(crop_px)]:df.index[max(crop_px)], :]
@@ -1030,8 +1043,8 @@ def o2_calculation(inp, dict_ratio_run1, dict_ratio_run2, dpara, surface, px2mm,
     dO2_calc = dict()
     for o in dratio.keys():
         if dratio[o]:
-            dic_cal = dict(map(lambda s:
-                               (s, O2_analysis_area(para=dpara[o][s], iratio=dratio[o][s])), dratio[o].keys()))
+            dic_cal = dict(map(lambda s: (s, O2_analysis_area(para=dpara[o][s], iratio=dratio[o][s])),
+                               dratio[o].keys()))
             dO2_calc[o] = dic_cal
 
     # post-processing
@@ -1071,8 +1084,19 @@ def O2_analysis_area(para, iratio, iratio_std=None, int_type='norm'):
     f_mp = ufloat(para.loc['f'][0], para.loc['f'][1])
     k_mp = ufloat(para.loc['k'][0], para.loc['k'][1])
 
+    if iratio_std is None:
+        iratio_std = np.array(np.empty(iratio.size)).reshape(iratio.shape)
+        iratio_std[:] = np.NaN
+
     if int_type == 'norm':
-        int_arr = unumpy.uarray(np.array(iratio.to_numpy()), np.array(iratio_std.to_numpy()))
+        if isinstance(iratio, np.ndarray) and isinstance(iratio_std, np.ndarray):
+            int_arr = unumpy.uarray(iratio, iratio_std)
+        elif isinstance(iratio, np.ndarray) is False and isinstance(iratio_std, np.ndarray):
+            int_arr = unumpy.uarray(iratio.to_numpy(), iratio_std)
+        elif isinstance(iratio, np.ndarray) and isinstance(iratio_std, np.ndarray) is False:
+            int_arr = unumpy.uarray(iratio, iratio_std.to_numpy())
+        else:
+            int_arr = unumpy.uarray(np.array(iratio.to_numpy()), np.array(iratio_std.to_numpy()))
     else:
         i0_mp = ufloat(para.loc['I0'][0], para.loc['I0'][1])
         if isinstance(iratio, (np.ndarray, np.generic)):
@@ -1884,21 +1908,26 @@ def savgol_smooth(dic_int, direction, window, polynom):
 
 
 def blurimage(o, s, kernel, kshape, dint, px2mm=None, surface=None, conversion=True):
+    if isinstance(dint, np.ndarray):
+        data = dint
+    else:
+        data = dint[o][s]
+
     # Depth profile with (horizontal, vertical, and square) Gaussian blur for one example
     if kernel == 'savgol':
         # vertical blur
-        dst_v = savgol_smooth(dic_int=dint[o][s], window=kshape[1], polynom=kshape[0], direction='vertical')
+        dst_v = savgol_smooth(dic_int=data, window=kshape[1], polynom=kshape[0], direction='vertical')
         # horizontal blur
-        dst_h = savgol_smooth(dic_int=dint[o][s], window=kshape[1], polynom=kshape[0], direction='horizontal')
+        dst_h = savgol_smooth(dic_int=data, window=kshape[1], polynom=kshape[0], direction='horizontal')
         # square blur
-        dst = savgol_smooth(dic_int=dint[o][s], window=kshape[1], polynom=kshape[0], direction='square')
+        dst = savgol_smooth(dic_int=data, window=kshape[1], polynom=kshape[0], direction='square')
     else:
         # vertical blur
-        dst_v = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=dint[o][s], direction='horizontal')
+        dst_v = imageblur(kernel=kernel, kshape=(1, kshape[0]), dic_int=data, direction='horizontal')
         # horizontal blur
-        dst_h = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=dint[o][s], direction='horizontal')
+        dst_h = imageblur(kernel=kernel, kshape=(kshape[0], 1), dic_int=data, direction='horizontal')
         # square blur
-        dst = imageblur(kernel=kernel, kshape=kshape, dic_int=dint[o][s], direction='horizontal')
+        dst = imageblur(kernel=kernel, kshape=kshape, dic_int=data, direction='horizontal')
 
     # combine all options in one dictionary
     dimages = dict({'vertical': dst_v, 'horizontal': dst_h, 'square': dst})
@@ -2010,7 +2039,9 @@ def O2blur_optode(inp, path_calib, kernel, kshape, px2mm, surface, depth_min, de
     dimg = dict(map(lambda d: (d, dimages[d].loc[depth_min:depth_max, :] if dimages[d].empty is False else None),
                 dimages.keys()))
     if blur_pos == 'norm':
-        dimg_std = dict(map(lambda d: (d, dimagesSTD[d].loc[depth_min:depth_max, :] if dimagesSTD[d].empty is False else None), dimagesSTD.keys()))
+        dimg_std = dict(map(lambda d:
+                            (d, dimagesSTD[d].loc[depth_min:depth_max, :] if dimagesSTD[d].empty is False else None),
+                            dimagesSTD.keys()))
     else:
         dimg_std = dict(map(lambda d: (d, None), dimages.keys()))
 
