@@ -539,22 +539,33 @@ def plotLP(dO2_lp, df_ms, header_ms, depth, kshape, depth_lp, s, arg, dO2_optode
 
 
 def plot_penetrationDepth(depth, ls_kernel, arg):
-    if isinstance(ls_kernel[0], tuple):
-        kernel_s = [k[1] for k in ls_kernel]
-    else:
-        kernel_s = ls_kernel
-    # .....................
-    fig, ax = plt.subplots(figsize=(5, 3.5))
+    # kernel selected
+    kernel_s = [k[1] for k in ls_kernel] if isinstance(ls_kernel[0], tuple) else ls_kernel
+
+    # generate figure and coordinate system
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax1 = ax.twiny()
+
+    # plotting
     for en, c in enumerate(depth.columns):
-        ax.plot(kernel_s, depth[c], lw=1., ls='-.', marker=arg['marker'][en], ms=7,
-                color=arg['colors'][en], fillstyle='none', label=c.split('-')[0] + ' blur')
-
+        label = 'microsensor' if 'microsensor' in c else c.split('-')[0] + ' blur'
+        ax.plot(kernel_s, depth[c], lw=1., ls='-.', marker=arg['marker'][en], ms=7, color=arg['colors'][en],
+                fillstyle='none', label=label)
     ax.legend(loc=0, frameon=True, fancybox=True, fontsize=fs * 0.8)
-    ax.tick_params(axis='both', labelsize=fs * 0.8)
-    ax.set_xlabel('kernel size', fontsize=fs)
-    ax.set_ylabel('$O_2$ penetration depth [mm]', fontsize=fs)
-    plt.tight_layout()
 
+    # axis scaling
+    ax.set_ylim(0, 0.525)
+    ax.tick_params(axis='both', labelsize=fs * 0.8)
+    ax1.set_xticks([i*arg['px2mm'] for i in ax.get_xticks()])
+    ax1.set_xlim([i*arg['px2mm'] for i in ax.get_xlim()])
+
+    # axis label
+    ax.set_xlabel('filter width [mm]', fontsize=fs)
+    ax1.set_xlabel('filter width [px]', fontsize=fs)
+    ax.set_ylabel('$O_2$ penetration depth [mm]', fontsize=fs)
+
+    plt.tight_layout()
+    plt.show()
     return fig
 
 
